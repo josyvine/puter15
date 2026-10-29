@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/llCitationChipRoot"
+    android:layout_width="wrap_content"
+    android:layout_height="30dp"
+    android:layout_marginEnd="6dp"
+    android:background="@drawable/bg_pill_badge"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="10dp"
+    android:paddingEnd="10dp">
+
+    <TextView
+        android:id="@+id/tvCitationTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:maxWidth="160dp"
+        android:text="Source Title"
+        android:textColor="@color/citation_chip_text"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:text="↗"
+        android:textColor="@color/citation_chip_text"
+        android:textSize="11sp" />
+
+</LinearLayout>
