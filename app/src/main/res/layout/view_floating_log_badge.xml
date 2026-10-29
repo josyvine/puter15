@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/flFloatingLogContainer"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:padding="6dp">
+
+    <!-- Circular Floating Button -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/cvFloatingLogBtn"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
+        android:clickable="true"
+        android:focusable="true"
+        android:foreground="?attr/selectableItemBackgroundBorderless"
+        app:cardBackgroundColor="#1E2238"
+        app:cardCornerRadius="28dp"
+        app:cardElevation="8dp"
+        app:cardPreventCornerOverlap="false"
+        app:cardUseCompatPadding="false">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <ImageView
+                android:id="@+id/ivFloatingLogIcon"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:layout_gravity="center"
+                android:contentDescription="Open System Log Console"
+                android:src="@drawable/ic_dashboard"
+                app:tint="#8C9EFF" />
+
+        </FrameLayout>
+    </androidx.cardview.widget.CardView>
+
+    <!-- Unread / Total Logs Pill Badge -->
+    <TextView
+        android:id="@+id/tvFloatingLogBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="0dp"
+        android:layout_marginEnd="0dp"
+        android:background="@drawable/bg_pill_badge"
+        android:backgroundTint="#7C4DFF"
+        android:elevation="12dp"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:minWidth="20dp"
+        android:minHeight="20dp"
+        android:paddingStart="5dp"
+        android:paddingTop="2dp"
+        android:paddingEnd="5dp"
+        android:paddingBottom="2dp"
+        android:text="0"
+        android:textColor="#FFFFFF"
+        android:textSize="10.5sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+</FrameLayout>
