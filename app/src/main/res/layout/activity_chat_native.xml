@@ -1,0 +1,670 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/chatRootLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#f7f7f7">
+
+    <!-- Primary Vertical Content Layout -->
+    <RelativeLayout
+        android:id="@+id/chatContentContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- 1. Fixed Top Header (60dp, #333333) -->
+        <RelativeLayout
+            android:id="@+id/mainHeaderBar"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:layout_alignParentTop="true"
+            android:background="#333333"
+            android:paddingStart="16dp"
+            android:paddingEnd="12dp">
+
+            <TextView
+                android:id="@+id/tvAppHeaderTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerVertical="true"
+                android:text="Puter Unofficial"
+                android:textColor="#ffffff"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <ImageView
+                android:id="@+id/btnHeaderMenu"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Menu"
+                android:padding="8dp"
+                android:src="@drawable/ic_more_vert"
+                app:tint="#ffffff" />
+        </RelativeLayout>
+
+        <!-- 2. Settings Bar (Accordion Trigger Bar) -->
+        <LinearLayout
+            android:id="@+id/settingsBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/mainHeaderBar"
+            android:background="#ffffff"
+            android:elevation="2dp"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <!-- Model Trigger Container -->
+            <LinearLayout
+                android:id="@+id/modelSelectTrigger"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="@drawable/edit_text_border"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp">
+
+                <TextView
+                    android:id="@+id/selectedModelText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:text="Sign in for Live Models"
+                    android:textColor="#333333"
+                    android:textSize="15sp" />
+
+                <ImageView
+                    android:id="@+id/ivTriggerChevron"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:src="@drawable/ic_chevron_down"
+                    app:tint="#555555" />
+            </LinearLayout>
+
+            <!-- Dynamic Aspect Ratio Bar (for Image Models) -->
+            <LinearLayout
+                android:id="@+id/aspectRatioContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <Spinner
+                    android:id="@+id/spnAspectRatio"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:background="@drawable/edit_text_border" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 3. Chat Timeline RecyclerView (Ghost fast-scroll lines suppressed, touch isolated) -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvChatTimeline"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_above="@id/chatControlsContainer"
+            android:layout_below="@id/settingsBar"
+            android:background="#f7f7f7"
+            android:clipToPadding="false"
+            android:descendantFocusability="beforeDescendants"
+            android:fastScrollEnabled="false"
+            android:overScrollMode="never"
+            android:paddingStart="12dp"
+            android:paddingTop="12dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="16dp"
+            android:scrollbars="none"
+            android:splitMotionEvents="false" />
+
+        <!-- 4. ECG Generation Pulse Loader with Stop Button -->
+        <LinearLayout
+            android:id="@+id/ecgLoader"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_above="@id/chatControlsContainer"
+            android:layout_centerHorizontal="true"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_pill_badge"
+            android:elevation="3dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="6dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:id="@+id/ivEcgIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_sparkle_agent"
+                app:tint="#1a73e8" />
+
+            <TextView
+                android:id="@+id/loaderText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="12dp"
+                android:text="AI is answering..."
+                android:textColor="#444444"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/btnStopGeneration"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:background="@drawable/bg_pill_badge"
+                android:backgroundTint="#ea4335"
+                android:contentDescription="Stop"
+                android:padding="6dp"
+                android:src="@drawable/ic_stop"
+                app:tint="#ffffff" />
+        </LinearLayout>
+
+        <!-- 5. Fixed Bottom Chat Controls Dock -->
+        <LinearLayout
+            android:id="@+id/chatControlsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:background="#ffffff"
+            android:gravity="center_horizontal"
+            android:paddingStart="10dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="10dp">
+
+            <!-- Floating Pill Search Bar Container -->
+            <LinearLayout
+                android:id="@+id/puterSearchBarContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:background="@drawable/bg_input_dock"
+                android:elevation="2dp"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <!-- Staged Thumbnails Preview Row -->
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/thumbnailArea"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="4dp"
+                    android:orientation="horizontal"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:visibility="gone" />
+
+                <!-- Input Row -->
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="44dp">
+
+                    <!-- Plus Attachment Button -->
+                    <ImageView
+                        android:id="@+id/btnUpload"
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:layout_alignParentStart="true"
+                        android:layout_centerVertical="true"
+                        android:layout_marginStart="2dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="Attach"
+                        android:padding="8dp"
+                        android:src="@drawable/ic_attachment_plus"
+                        app:tint="#5f6368" />
+
+                    <!-- Multiline Edit Text ("Ask Puter...") -->
+                    <EditText
+                        android:id="@+id/puterChatInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_centerVertical="true"
+                        android:layout_toStartOf="@id/actionButtonsContainer"
+                        android:layout_toEndOf="@id/btnUpload"
+                        android:background="@null"
+                        android:hint="Ask Puter..."
+                        android:maxLines="5"
+                        android:minHeight="40dp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:textColor="#202124"
+                        android:textColorHint="#80868b"
+                        android:textSize="15sp" />
+
+                    <!-- Action Buttons Cluster (Mic, Voice Agent Sparkle with Unclipped Stars, Send) -->
+                    <LinearLayout
+                        android:id="@+id/actionButtonsContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:layout_centerVertical="true"
+                        android:clipChildren="false"
+                        android:clipToPadding="false"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <!-- Mic Button -->
+                        <ImageView
+                            android:id="@+id/btnMic"
+                            android:layout_width="38dp"
+                            android:layout_height="38dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="Mic"
+                            android:padding="8dp"
+                            android:src="@drawable/ic_mic_pulse"
+                            app:tint="#5f6368" />
+
+                        <!-- Voice Agent Sparkle Button with Orbiting Stars -->
+                        <FrameLayout
+                            android:id="@+id/flVoiceAgentBtn"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:layout_marginEnd="2dp"
+                            android:clipChildren="false"
+                            android:clipToPadding="false">
+
+                            <ImageView
+                                android:id="@+id/voiceAgentIcon"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:layout_gravity="center"
+                                android:contentDescription="Live Voice Agent"
+                                android:src="@drawable/ic_sparkle_agent"
+                                app:tint="#1a73e8" />
+
+                            <!-- Star 1 (Top Center: 12 o'clock position) -->
+                            <TextView
+                                android:id="@+id/orbitStar1"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_gravity="top|center_horizontal"
+                                android:layout_marginTop="2dp"
+                                android:text="✦"
+                                android:textColor="#1a73e8"
+                                android:textSize="11sp"
+                                android:visibility="invisible" />
+
+                            <!-- Star 2 (Bottom Right: 4 o'clock position) -->
+                            <TextView
+                                android:id="@+id/orbitStar2"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_gravity="bottom|end"
+                                android:layout_marginEnd="3dp"
+                                android:layout_marginBottom="4dp"
+                                android:text="✦"
+                                android:textColor="#1a73e8"
+                                android:textSize="10sp"
+                                android:visibility="invisible" />
+
+                            <!-- Star 3 (Bottom Left: 8 o'clock position) -->
+                            <TextView
+                                android:id="@+id/orbitStar3"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_gravity="bottom|start"
+                                android:layout_marginStart="3dp"
+                                android:layout_marginBottom="4dp"
+                                android:text="✦"
+                                android:textColor="#1a73e8"
+                                android:textSize="9sp"
+                                android:visibility="invisible" />
+                        </FrameLayout>
+
+                        <!-- Send Button -->
+                        <ImageButton
+                            android:id="@+id/btnSend"
+                            android:layout_width="38dp"
+                            android:layout_height="38dp"
+                            android:layout_marginEnd="2dp"
+                            android:background="@drawable/bg_pill_badge"
+                            android:backgroundTint="#1a73e8"
+                            android:contentDescription="Send"
+                            android:elevation="2dp"
+                            android:padding="8dp"
+                            android:src="@drawable/ic_send"
+                            android:visibility="gone"
+                            app:tint="#ffffff" />
+                    </LinearLayout>
+                </RelativeLayout>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 6. Floating Expandable Model Accordion Menu -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/accordionMenuCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/settingsBar"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:elevation="10dp"
+            android:visibility="gone"
+            app:cardCornerRadius="8dp">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvAccordionModels"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#ffffff"
+                android:clipToPadding="false"
+                android:overScrollMode="never"
+                android:paddingBottom="8dp" />
+        </androidx.cardview.widget.CardView>
+
+        <!-- 7. Floating Scrollable Three-Dot Dropdown Menu (Fluid, proportional height) -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/puterDropdownMenuCard"
+            android:layout_width="280dp"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_marginTop="62dp"
+            android:layout_marginEnd="10dp"
+            android:elevation="14dp"
+            android:visibility="gone"
+            app:cardCornerRadius="8dp">
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#ffffff"
+                android:fadeScrollbars="false"
+                android:fillViewport="true"
+                android:overScrollMode="ifContentScrolls"
+                android:scrollbars="vertical">
+
+                <LinearLayout
+                    android:id="@+id/llDropdownMenuContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <!-- Sign In / Sign Out -->
+                    <TextView
+                        android:id="@+id/menuAuthOption"
+                        style="@style/DropdownMenuItem"
+                        android:text="Sign In" />
+
+                    <!-- Enable Live Models / Use Local Models -->
+                    <TextView
+                        android:id="@+id/menuModelSourceToggle"
+                        style="@style/DropdownMenuItem"
+                        android:text="Enable Live Models" />
+
+                    <!-- View History -->
+                    <TextView
+                        android:id="@+id/menuViewHistory"
+                        style="@style/DropdownMenuItem"
+                        android:text="View History" />
+
+                    <!-- New Session -->
+                    <TextView
+                        android:id="@+id/menuNewSession"
+                        style="@style/DropdownMenuItem"
+                        android:text="New Session" />
+
+                    <!-- Hide Settings / Show Settings -->
+                    <TextView
+                        android:id="@+id/menuToggleSettings"
+                        style="@style/DropdownMenuItem"
+                        android:text="Hide Settings" />
+
+                    <!-- Help -->
+                    <TextView
+                        android:id="@+id/menuHelp"
+                        style="@style/DropdownMenuItem"
+                        android:text="Help" />
+
+                    <!-- Settings (Hub) -->
+                    <TextView
+                        android:id="@+id/menuSettingsHub"
+                        style="@style/DropdownMenuItem"
+                        android:text="Settings" />
+
+                    <!-- Browse Website -->
+                    <TextView
+                        android:id="@+id/menuBrowseWebsite"
+                        style="@style/DropdownMenuItem"
+                        android:text="Browse Website" />
+
+                    <!-- Traders Zone -->
+                    <TextView
+                        android:id="@+id/menuTradersZone"
+                        style="@style/DropdownMenuItem"
+                        android:text="Traders Zone" />
+
+                    <!-- Reply Language Input Item -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="#ffffff"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Reply Language"
+                            android:textColor="#555555"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+
+                        <EditText
+                            android:id="@+id/etMenuReplyLanguage"
+                            android:layout_width="match_parent"
+                            android:layout_height="36dp"
+                            android:layout_marginTop="6dp"
+                            android:background="@drawable/edit_text_border"
+                            android:hint="Enter reply language (e.g., Malayalam)..."
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:singleLine="true"
+                            android:textColor="#333333"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <!-- Enable URL Context Checkbox Item -->
+                    <LinearLayout
+                        android:id="@+id/llMenuUrlContext"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Enable URL Context"
+                            android:textColor="#555555"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+
+                        <CheckBox
+                            android:id="@+id/cbMenuUrlContext"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+                    </LinearLayout>
+
+                    <!-- Generation Usage Section -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="#e8f0fe"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="GENERATION USAGE"
+                            android:textColor="#1a73e8"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvMenuLastTokens"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:fontFamily="monospace"
+                            android:text="Last: 0 tokens"
+                            android:textColor="#333333"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/tvMenuLastCost"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="Cost: $0.0000"
+                            android:textColor="#333333"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/tvMenuGlobalTokens"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:fontFamily="monospace"
+                            android:text="Global Total: 0 tokens"
+                            android:textColor="#333333"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/tvMenuGlobalCost"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="Global Cost: $0.0000"
+                            android:textColor="#333333"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <!-- Divider for Old Sessions -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="#f9f9f9"
+                        android:padding="8dp"
+                        android:text="Old Sessions (Long-press to delete)"
+                        android:textColor="#888888"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:id="@+id/llDynamicSessionsContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                    <!-- Divider for Scraped Items -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="#f9f9f9"
+                        android:padding="8dp"
+                        android:text="Web Scrap (Long-press to delete)"
+                        android:textColor="#888888"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:id="@+id/llDynamicScrapedContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+                </LinearLayout>
+            </ScrollView>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 8. Floating Context Menu (Anchored to Top-Left for Dynamic setX/setY Touch Coordinates) -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/customContextMenuCard"
+            android:layout_width="200dp"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_alignParentTop="true"
+            android:elevation="16dp"
+            android:visibility="gone"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#ffffff"
+                android:orientation="vertical"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp">
+
+                <TextView
+                    android:id="@+id/ctxCancelGen"
+                    style="@style/ContextMenuItem"
+                    android:text="Stop Generation"
+                    android:textColor="#ea4335"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/ctxCopyChat"
+                    style="@style/ContextMenuItem"
+                    android:text="Copy Chat" />
+
+                <TextView
+                    android:id="@+id/ctxReadAloud"
+                    style="@style/ContextMenuItem"
+                    android:text="Read Aloud" />
+
+                <TextView
+                    android:id="@+id/ctxDeleteChat"
+                    style="@style/ContextMenuItem"
+                    android:text="Delete Chat"
+                    android:textColor="#d93025" />
+
+                <TextView
+                    android:id="@+id/ctxRefreshRelay"
+                    style="@style/ContextMenuItem"
+                    android:text="Refresh Relay" />
+
+                <TextView
+                    android:id="@+id/ctxToggleMode"
+                    style="@style/ContextMenuItem"
+                    android:text="Normal Mode" />
+
+                <TextView
+                    android:id="@+id/ctxToggleProvider"
+                    style="@style/ContextMenuItem"
+                    android:text="Gemini Mode" />
+
+                <TextView
+                    android:id="@+id/ctxEndSession"
+                    style="@style/ContextMenuItem"
+                    android:text="End Session" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 9. Hidden 1x1 Pixel Background WebView for Gemini Live WebSocket & AudioContext -->
+        <android.webkit.WebView
+            android:id="@+id/headlessAudioWebView"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="invisible" />
+
+    </RelativeLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
