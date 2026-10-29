@@ -445,4 +445,362 @@ public class AppDialogManager {
     }
 
     public void showImagePreviewViewer(String base64OrUrl, WebAppInterface webAppInterface) {
-        BottomSheetDialog dialog = new BottomSheetDialog(activity, R.style.BottomS
+        BottomSheetDialog dialog = new BottomSheetDialog(activity, R.style.BottomSheetDialogTheme);
+        activeBottomSheet = dialog;
+        View sheet = LayoutInflater.from(activity).inflate(R.layout.dialog_image_preview_viewer, null);
+        ImageView iv = sheet.findViewById(R.id.ivFullPreviewImage);
+
+        if (base64OrUrl != null && base64OrUrl.startsWith("data:image")) {
+            String clean = base64OrUrl.replaceFirst("^data:image/[a-zA-Z]+;base64,", "");
+            byte[] decoded = Base64.decode(clean, Base64.DEFAULT);
+            Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
+            iv.setImageBitmap(bmp);
+        }
+
+        sheet.findViewById(R.id.btnCloseImagePreview).setOnClickListener(v -> dialog.dismiss());
+        sheet.findViewById(R.id.btnSaveImageToGallery).setOnClickListener(v -> {
+            if (webAppInterface != null) {
+                webAppInterface.saveImageToGallery(base64OrUrl, "Puter_" + System.currentTimeMillis() + ".jpg");
+            }
+        });
+        sheet.findViewById(R.id.btnShareImage).setOnClickListener(v ->
+                Toast.makeText(activity, "Sharing image...", Toast.LENGTH_SHORT).show());
+
+        dialog.setContentView(sheet);
+        dialog.show();
+    }
+
+    public void showAttachmentPickerDialog(ActivityResultLauncher<String> galleryLauncher,
+                                           ActivityResultLauncher<String> documentLauncher) {
+        BottomSheetDialog dialog = new BottomSheetDialog(activity, R.style.BottomSheetDialogTheme);
+        activeBottomSheet = dialog;
+        View sheet = LayoutInflater.from(activity).inflate(R.layout.dialog_attachment_picker, null);
+
+        sheet.findViewById(R.id.btnOptionGallery).setOnClickListener(v -> {
+            dialog.dismiss();
+            if (galleryLauncher != null) galleryLauncher.launch("image/*");
+        });
+
+        sheet.findViewById(R.id.btnOptionDocument).setOnClickListener(v -> {
+            dialog.dismiss();
+            if (documentLauncher != null) documentLauncher.launch("*/*");
+        });
+
+        sheet.findViewById(R.id.btnOptionCamera).setOnClickListener(v -> {
+            dialog.dismiss();
+            if (galleryLauncher != null) galleryLauncher.launch("image/*");
+        });
+
+        dialog.setContentView(sheet);
+        dialog.show();
+    }
+
+    // --- PUTER AUTHENTICATION POPUP DIALOG ---
+
+    @SuppressLint("SetJavaScriptEnabled")
+    public void openPuterAuthDialog() {
+        if (activeAuthDialog != null && activeAuthDialog.isShowing()) {
+            activeAuthDialog.dismiss();
+        }
+        isPuterAuthProcessing = false;
+
+        LinearLayout dialogLayout = new LinearLayout(activity);
+        dialogLayout.setOrientation(LinearLayout.VERTICAL);
+        dialogLayout.setBackgroundColor(Color.WHITE);
+
+        final WebView popupWebView = new WebView(activity);
+
+        Button closeButton = new Button(activity);
+        closeButton.setText("Close Window (Tap when Signed In)");
+        closeButton.setBackgroundColor(Color.parseColor("#1a73e8"));
+        closeButton.setTextColor(Color.WHITE);
+        closeButton.setOnClickListener(v -> {
+            LiveLogManager.getInstance().warn("PUTER_AUTH", "Manual Window Close",
+                    "User tapped Close Button. Inspecting storage for token...");
+            CookieManager.getInstance().flush();
+            extractTokensFromWebView(popupWebView, true);
+        });
+
+        dialogLayout.addView(closeButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        dialogLayout.addView(popupWebView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        WebSettings ws = popupWebView.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setDatabaseEnabled(true);
+        ws.setJavaScriptCanOpenWindowsAutomatically(true);
+        ws.setSupportMultipleWindows(true);
+
+        String userAgent = ws.getUserAgentString().replace("; wv", "");
+        ws.setUserAgentString(userAgent);
+
+        CookieManager.getInstance().setAcceptCookie(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(popupWebView, true);
+
+        popupWebView.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void onAuthMessageReceived(String rawData) {
+                LiveLogManager.getInstance().ok("PUTER_AUTH", "PostMessage Captured", "Raw: " + rawData);
+                activity.runOnUiThread(() -> extractTokensFromWebView(popupWebView, true));
+            }
+
+            @JavascriptInterface
+            public void onTokenExtracted(String token) {
+                if (token != null && !token.trim().isEmpty()) {
+                    String clean = token.replace("\"", "").replace("'", "").trim();
+                    LiveLogManager.getInstance().ok("PUTER_AUTH", "Token via JS Bridge", "Token len: " + clean.length());
+                    AuthManager.getInstance(activity).saveAuthToken(clean);
+                    activity.runOnUiThread(() -> completePuterAuth());
+                }
+            }
+        }, "AndroidPuterAuthBridge");
+
+        popupWebView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onCloseWindow(WebView window) {
+                LiveLogManager.getInstance().ok("PUTER_AUTH", "SDK Issued window.close()", "Finalizing auth extraction.");
+                activity.runOnUiThread(() -> extractTokensFromWebView(popupWebView, true));
+            }
+        });
+
+        final String openerPolyfillScript =
+                "javascript:(function() {" +
+                "  if (!window.opener) {" +
+                "    window.opener = {" +
+                "      postMessage: function(data, origin) {" +
+                "        if (window.AndroidPuterAuthBridge) {" +
+                "          window.AndroidPuterAuthBridge.onAuthMessageReceived(typeof data === 'object' ? JSON.stringify(data) : String(data));" +
+                "        }" +
+                "      }" +
+                "    };" +
+                "  }" +
+                "  try {" +
+                "    var token = localStorage.getItem('puter.auth.token') || (typeof puter !== 'undefined' && puter.authToken);" +
+                "    if (token && window.AndroidPuterAuthBridge) {" +
+                "      window.AndroidPuterAuthBridge.onTokenExtracted(token);" +
+                "    }" +
+                "  } catch(e) {}" +
+                "})()";
+
+        popupWebView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                LiveLogManager.getInstance().process("PUTER_AUTH", "OAuth Page Loading", "URL: " + url);
+                view.evaluateJavascript(openerPolyfillScript, null);
+                checkAuthRedirect(url, view);
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (request != null && request.getUrl() != null) {
+                    return checkAuthRedirect(request.getUrl().toString(), view);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return checkAuthRedirect(url, view);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                LiveLogManager.getInstance().ok("PUTER_AUTH", "OAuth Page Finished", "URL: " + url);
+                view.evaluateJavascript(openerPolyfillScript, null);
+                CookieManager.getInstance().flush();
+
+                extractTokensFromWebView(view, false);
+                checkAuthRedirect(url, view);
+            }
+
+            private boolean checkAuthRedirect(String url, WebView view) {
+                if (url == null || isPuterAuthProcessing) return false;
+                AuthManager auth = AuthManager.getInstance(activity);
+                if (auth.isAuthCallback(url)) {
+                    isPuterAuthProcessing = true;
+                    LiveLogManager.getInstance().ok("PUTER_AUTH", "Callback Detected", "Callback URL matched: " + url);
+                    extractTokensFromWebView(view, true);
+                    return true;
+                }
+                return false;
+            }
+        });
+
+        activeAuthDialog = new Dialog(activity, android.R.style.Theme_DeviceDefault_NoActionBar);
+        activeAuthDialog.setContentView(dialogLayout);
+        activeAuthDialog.show();
+
+        String sdkAuthUrl = "https://puter.com/?embedded_in_popup=true&request_auth=true";
+        java.util.Map<String, String> headers = new java.util.HashMap<>();
+        headers.put("Origin", "https://appassets.androidplatform.net");
+        headers.put("Referer", "https://appassets.androidplatform.net/");
+        popupWebView.loadUrl(sdkAuthUrl, headers);
+    }
+
+    private void extractTokensFromWebView(WebView webView, boolean finalizeOnFound) {
+        if (webView == null) return;
+
+        try {
+            CookieManager cm = CookieManager.getInstance();
+            String cookies = cm.getCookie("https://puter.com");
+            if (cookies == null || cookies.isEmpty()) {
+                cookies = cm.getCookie("https://api.puter.com");
+            }
+            if (cookies != null && !cookies.isEmpty()) {
+                String[] cookieList = cookies.split(";");
+                for (String c : cookieList) {
+                    String[] kv = c.trim().split("=");
+                    if (kv.length >= 2) {
+                        String key = kv[0].trim();
+                        String val = kv[1].trim();
+
+                        if (key.equalsIgnoreCase("token") ||
+                            key.equalsIgnoreCase("puter_auth_token") ||
+                            key.equalsIgnoreCase("puter_token") ||
+                            key.equalsIgnoreCase("auth_token") ||
+                            key.equalsIgnoreCase("puter-auth")) {
+
+                            if (!val.isEmpty()) {
+                                LiveLogManager.getInstance().ok("PUTER_AUTH", "Token Discovered in Cookies",
+                                        "Key [" + key + "] len: " + val.length());
+                                AuthManager.getInstance(activity).saveAuthToken(val);
+                                if (finalizeOnFound) {
+                                    completePuterAuth();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LiveLogManager.getInstance().error("PUTER_AUTH", "Cookie Scan Error", e.getMessage());
+        }
+
+        String jsQuery = "(function(){" +
+                "  var t = '';" +
+                "  try { t = localStorage.getItem('puter.auth.token') || localStorage.getItem('token') || ''; } catch(e){}" +
+                "  if (!t && typeof puter !== 'undefined') {" +
+                "    t = puter.authToken || (puter.auth && puter.auth.token) || '';" +
+                "  }" +
+                "  return t;" +
+                "})()";
+
+        webView.evaluateJavascript(jsQuery, val -> {
+            if (val != null && !val.equals("null") && !val.trim().isEmpty()) {
+                String clean = val.replace("\"", "").replace("'", "").trim();
+                if (!clean.isEmpty()) {
+                    LiveLogManager.getInstance().ok("PUTER_AUTH", "Token Extracted from LocalStorage", "Len: " + clean.length());
+                    AuthManager.getInstance(activity).saveAuthToken(clean);
+                    if (finalizeOnFound) {
+                        completePuterAuth();
+                    }
+                    return;
+                }
+            }
+            if (finalizeOnFound) {
+                completePuterAuth();
+            }
+        });
+    }
+
+    private void completePuterAuth() {
+        if (isPuterAuthProcessing && activeAuthDialog == null) return;
+        isPuterAuthProcessing = true;
+
+        CookieManager.getInstance().flush();
+        AuthManager auth = AuthManager.getInstance(activity);
+        auth.handleAuthCallback("https://puter.com/app");
+        auth.setLoggedIn(true);
+
+        String currentToken = auth.getAuthToken();
+        if (currentToken != null && !currentToken.trim().isEmpty()) {
+            LiveLogManager.getInstance().ok("PUTER_AUTH", "Authentication Verified",
+                    "Token active in AuthManager (length: " + currentToken.length() + ")");
+        }
+
+        activity.runOnUiThread(() -> {
+            if (activeAuthDialog != null && activeAuthDialog.isShowing()) {
+                try {
+                    activeAuthDialog.dismiss();
+                } catch (Exception ignored) {}
+                activeAuthDialog = null;
+            }
+            Toast.makeText(activity, "Puter Sign-In Successful!", Toast.LENGTH_SHORT).show();
+            if (onAuthSuccessCallback != null) {
+                onAuthSuccessCallback.run();
+            }
+        });
+    }
+
+    private void copyText(String text) {
+        ClipboardManager cm = (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm != null) {
+            cm.setPrimaryClip(ClipData.newPlainText("Puter Copied", text));
+            Toast.makeText(activity, "Copied to clipboard", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    public void dismissAll() {
+        if (activeAuthDialog != null && activeAuthDialog.isShowing()) {
+            try { activeAuthDialog.dismiss(); } catch (Exception ignored) {}
+            activeAuthDialog = null;
+        }
+        if (activeBottomSheet != null && activeBottomSheet.isShowing()) {
+            try { activeBottomSheet.dismiss(); } catch (Exception ignored) {}
+            activeBottomSheet = null;
+        }
+    }
+
+    // --- INNER SESSION HISTORY ADAPTER ---
+
+    public static class SessionHistoryAdapter extends RecyclerView.Adapter<SessionHistoryAdapter.ViewHolder> {
+        private final List<ChatSession> sessions;
+        private final OnSessionClickListener clickListener;
+        private final OnSessionDeleteListener deleteListener;
+
+        public interface OnSessionClickListener { void onClick(ChatSession session); }
+        public interface OnSessionDeleteListener { void onDelete(ChatSession session); }
+
+        public SessionHistoryAdapter(List<ChatSession> sessions, OnSessionClickListener c, OnSessionDeleteListener d) {
+            this.sessions = sessions;
+            this.clickListener = c;
+            this.deleteListener = d;
+        }
+
+        @NonNull
+        @Override
+        public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_session_drawer_item, parent, false);
+            return new ViewHolder(v);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+            ChatSession s = sessions.get(position);
+            holder.tvTitle.setText(s.getTitle());
+            holder.itemView.setOnClickListener(v -> clickListener.onClick(s));
+            holder.btnDelete.setOnClickListener(v -> deleteListener.onDelete(s));
+        }
+
+        @Override
+        public int getItemCount() {
+            return sessions != null ? sessions.size() : 0;
+        }
+
+        public static class ViewHolder extends RecyclerView.ViewHolder {
+            public TextView tvTitle;
+            public ImageView btnDelete;
+            public ViewHolder(View v) {
+                super(v);
+                tvTitle = v.findViewById(R.id.tvSessionTitle);
+                btnDelete = v.findViewById(R.id.btnDeleteSession);
+            }
+        }
+    }
+}
