@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Custom Attributes for ECG Pulse Animation and Voice Orb Visualizer -->
+    <declare-styleable name="ECGPulseView">
+        <attr name="pulseColor" format="color" />
+        <attr name="pulseStrokeWidth" format="dimension" />
+        <attr name="pulseSpeed" format="integer" />
+    </declare-styleable>
+
+    <declare-styleable name="VoiceOrbView">
+        <attr name="orbColor" format="color" />
+        <attr name="orbGlowColor" format="color" />
+        <attr name="orbState" format="enum">
+            <enum name="idle" value="0" />
+            <enum name="listening" value="1" />
+            <enum name="speaking" value="2" />
+            <enum name="error" value="3" />
+        </attr>
+    </declare-styleable>
+</resources>
