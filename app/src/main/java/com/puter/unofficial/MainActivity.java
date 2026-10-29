@@ -8,15 +8,18 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.media.MediaMetadataRetriever;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Vibrator;
+import android.provider.OpenableColumns;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
@@ -783,18 +786,52 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
     private void stageFileFromUri(Uri uri) {
         try {
+            // Check file size to avoid allocating excessive heap memory
+            long fileSize = 0;
+            try {
+                Cursor cursor = getContentResolver().query(uri, null, null, null, null);
+                if (cursor != null && cursor.moveToFirst()) {
+                    int sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE);
+                    if (sizeIndex != -1) fileSize = cursor.getLong(sizeIndex);
+                    cursor.close();
+                }
+            } catch (Exception ignored) {}
+
+            // Guard against large video/media files that exceed Gemini inline payload limit (20MB)
+            if (fileSize > 25 * 1024 * 1024) {
+                Toast.makeText(this, "File too large (max 20MB for direct inline analysis)", Toast.LENGTH_LONG).show();
+                LiveLogManager.getInstance().warn("ATTACHMENT", "File Skipped", "File exceeds 20MB inline limit: " + fileSize + " bytes");
+                return;
+            }
+
             String name = FileUtils.getFileName(this, uri);
             String mime = FileUtils.getMimeType(this, uri);
             String dataUri = FileUtils.fileToDataUri(this, uri);
             Bitmap thumb = null;
-            if (mime != null && mime.startsWith("image/")) {
-                thumb = ImageUtils.getThumbnail(this, uri, 120);
+
+            if (mime != null) {
+                if (mime.startsWith("image/")) {
+                    thumb = ImageUtils.getThumbnail(this, uri, 120);
+                } else if (mime.startsWith("video/")) {
+                    try {
+                        MediaMetadataRetriever mmr = new MediaMetadataRetriever();
+                        mmr.setDataSource(this, uri);
+                        thumb = mmr.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                        mmr.release();
+                    } catch (Exception ignored) {}
+                }
             }
-            StagedFile file = new StagedFile(uri, name, mime, 0, dataUri, thumb);
+
+            StagedFile file = new StagedFile(uri, name, mime, fileSize, dataUri, thumb);
             stagedAttachmentsAdapter.addAttachment(file);
             rvStagedAttachments.setVisibility(View.VISIBLE);
             updateSendButtonState();
+            LiveLogManager.getInstance().ok("ATTACHMENT", "File Staged", "Name: " + name + " | Mime: " + mime + " | Size: " + fileSize);
+        } catch (OutOfMemoryError oom) {
+            LiveLogManager.getInstance().error("ATTACHMENT", "OOM Loading File", "File too large for heap allocation");
+            Toast.makeText(this, "Media file is too large for device memory", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
+            LiveLogManager.getInstance().error("ATTACHMENT", "Stage Exception", e.getMessage());
             Toast.makeText(this, "Failed to attach: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
@@ -851,7 +888,18 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
             @Override
             public void onPreviewImage(String imageUrlOrBase64) {
-                dialogManager.showImagePreviewViewer(imageUrlOrBase64, webAppInterface);
+                if (imageUrlOrBase64 != null && (imageUrlOrBase64.startsWith("data:video/") || imageUrlOrBase64.endsWith(".mp4"))) {
+                    try {
+                        Intent intent = new Intent(Intent.ACTION_VIEW);
+                        intent.setDataAndType(Uri.parse(imageUrlOrBase64), "video/*");
+                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        Toast.makeText(MainActivity.this, "No external video player found", Toast.LENGTH_SHORT).show();
+                    }
+                } else {
+                    dialogManager.showImagePreviewViewer(imageUrlOrBase64, webAppInterface);
+                }
             }
 
             @Override
@@ -1309,6 +1357,12 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         return "Gemini".equalsIgnoreCase(activeProvider);
     }
 
+    private boolean isGeminiSupportedInlineMedia(String mimeType) {
+        if (mimeType == null) return false;
+        String lower = mimeType.toLowerCase(Locale.US);
+        return lower.startsWith("image/") || lower.startsWith("video/") || lower.startsWith("audio/") || lower.equals("application/pdf");
+    }
+
     private void routeGeneration(String prompt, List<StagedFile> attachments, ChatMessage assistantMsg) {
         currentActiveAssistantMsg = assistantMsg;
         if (isGeminiNativeModel(activeModelId)) {
@@ -1365,12 +1419,14 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                 contentBlocks.put(textBlock);
 
                 for (StagedFile file : attachments) {
-                    JSONObject imgBlock = new JSONObject();
-                    imgBlock.put("type", "image_url");
-                    JSONObject urlObj = new JSONObject();
-                    urlObj.put("url", file.getBase64DataUri());
-                    imgBlock.put("image_url", urlObj);
-                    contentBlocks.put(imgBlock);
+                    if (file.getMimeType() != null && file.getMimeType().startsWith("image/")) {
+                        JSONObject imgBlock = new JSONObject();
+                        imgBlock.put("type", "image_url");
+                        JSONObject urlObj = new JSONObject();
+                        urlObj.put("url", file.getBase64DataUri());
+                        imgBlock.put("image_url", urlObj);
+                        contentBlocks.put(imgBlock);
+                    }
                 }
                 current.put("content", contentBlocks);
             } else {
@@ -1421,7 +1477,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
                     if (msg.getAttachments() != null && "user".equals(role)) {
                         for (StagedFile file : msg.getAttachments()) {
-                            if (file != null && file.getBase64DataUri() != null && file.getMimeType() != null && file.getMimeType().startsWith("image/")) {
+                            if (file != null && file.getBase64DataUri() != null && isGeminiSupportedInlineMedia(file.getMimeType())) {
                                 String cleanB64 = file.getBase64DataUri().replaceFirst("^data:[^;]+;base64,", "");
                                 JSONObject inlineData = new JSONObject();
                                 inlineData.put("mimeType", file.getMimeType());
@@ -1464,9 +1520,10 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                 currentParts.put(textPart);
             }
 
+            // Packaging video, audio, image and document parts for Gemini
             if (attachments != null) {
                 for (StagedFile file : attachments) {
-                    if (file != null && file.getBase64DataUri() != null && file.getMimeType() != null && file.getMimeType().startsWith("image/")) {
+                    if (file != null && file.getBase64DataUri() != null && isGeminiSupportedInlineMedia(file.getMimeType())) {
                         String cleanB64 = file.getBase64DataUri().replaceFirst("^data:[^;]+;base64,", "");
                         JSONObject inlineData = new JSONObject();
                         inlineData.put("mimeType", file.getMimeType());
@@ -1474,6 +1531,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                         JSONObject partObj = new JSONObject();
                         partObj.put("inlineData", inlineData);
                         currentParts.put(partObj);
+                        LiveLogManager.getInstance().ok("GEMINI_MEDIA", "Attached Media Part", "Mime: " + file.getMimeType() + " | Length: " + cleanB64.length());
                     }
                 }
             }
