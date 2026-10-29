@@ -1,0 +1,6 @@
+{
+  "name": "Puter Unofficial",
+  "description": "Pure Native Android Client for Puter AI and Gemini Live Voice Agent",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
