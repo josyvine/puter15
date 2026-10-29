@@ -79,11 +79,33 @@ let isSessionActive = false;
 let nextPlaybackTime = 0;
 let isPuterChatAborted = false;
 let lastSyncedTokenToNative = null;
+let activeAudioSources = [];
 
 // Turn tracking & deduplication guards
 let lastUserTranscriptInTurn = "";
 let currentTurnModelTextAccumulator = "";
 let currentTurnAudioChunksCount = 0;
+
+/**
+ * Immediately stops all actively playing and queued WebAudio buffer sources.
+ * Prevents dual audio overlap during barge-in interruptions or session resets.
+ */
+window.stopAllPlaybackAudio = function() {
+    if (activeAudioSources && activeAudioSources.length > 0) {
+        for (let i = 0; i < activeAudioSources.length; i++) {
+            try {
+                activeAudioSources[i].stop(0);
+                activeAudioSources[i].disconnect();
+            } catch (e) {}
+        }
+        activeAudioSources = [];
+    }
+    if (playbackAudioContext && playbackAudioContext.state !== 'closed') {
+        nextPlaybackTime = playbackAudioContext.currentTime;
+    } else {
+        nextPlaybackTime = 0;
+    }
+};
 
 window.startCommentarySession = function(scriptText, personaPrompt) {
     if (isSessionActive) {
@@ -95,6 +117,7 @@ window.startCommentarySession = function(scriptText, personaPrompt) {
     lastUserTranscriptInTurn = "";
     currentTurnModelTextAccumulator = "";
     currentTurnAudioChunksCount = 0;
+    window.stopAllPlaybackAudio();
 
     // 1. Resolve Exact Model Name
     let selectedModel = "";
@@ -232,17 +255,18 @@ window.startCommentarySession = function(scriptText, personaPrompt) {
                     }
                 }
 
-                // 2. Barge-in Interruption Detection
+                // 2. Barge-in Interruption Detection - Flush WebAudio instantly
                 if (content.interrupted) {
-                    nextPlaybackTime = 0;
+                    window.stopAllPlaybackAudio();
                     currentTurnModelTextAccumulator = "";
-                    sendLogToNative("WARN", "GEMINI_LIVE", "Barge-In Interruption", "Server detected user speech; halting audio and clearing model turn buffer.");
+                    currentTurnAudioChunksCount = 0;
+                    sendLogToNative("WARN", "GEMINI_LIVE", "Barge-In Interruption", "Server detected user speech; halting audio immediately and clearing turn buffer.");
                     if (bridge && bridge.onLiveCommentaryText) {
                         bridge.onLiveCommentaryText("⚡ [Interrupted]");
                     }
                 }
 
-                // 3. Process Model Output Audio Transcription (The Missing Left Bubble Fix)
+                // 3. Process Model Output Audio Transcription
                 let modelSpokenChunk = "";
 
                 // Case A: Model transcript delivered via outputAudioTranscription
@@ -385,6 +409,7 @@ window.groundTargetWithVision = function(base64Jpg, targetId, desc) {
 window.stopCommentarySession = function() {
     sendLogToNative("INFO", "GEMINI_LIVE", "Session Stop Triggered", "Cleaning up WebSocket and WebAudio pipelines...");
     isSessionActive = false;
+    window.stopAllPlaybackAudio();
     cleanupAudio();
     if (liveWs) {
         try { 
@@ -400,6 +425,7 @@ window.stopCommentarySession = function() {
 };
 
 function cleanupAudio() {
+    window.stopAllPlaybackAudio();
     if (micMediaStream) {
         try { 
             micMediaStream.getTracks().forEach(t => t.stop()); 
@@ -528,6 +554,15 @@ function playAudioChunk(base64Pcm) {
         const source = playbackAudioContext.createBufferSource();
         source.buffer = buffer;
         source.connect(playbackAudioContext.destination);
+
+        // Track active buffer source for instant cancellation on barge-in
+        activeAudioSources.push(source);
+        source.onended = function() {
+            const idx = activeAudioSources.indexOf(source);
+            if (idx !== -1) {
+                activeAudioSources.splice(idx, 1);
+            }
+        };
 
         const now = playbackAudioContext.currentTime;
         if (nextPlaybackTime < now) {
