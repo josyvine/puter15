@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_code_header"
+    android:backgroundTint="@color/white"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Select Image Aspect Ratio"
+        android:textColor="@color/text_dark"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="Choose the aspect ratio for AI image generation:"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp" />
+
+    <!-- Chip Grid -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnRatio1_1"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:layout_margin="3dp"
+            android:backgroundTint="@color/puter_blue"
+            android:text="1:1"
+            android:textColor="@color/white"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnRatio16_9"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:layout_margin="3dp"
+            android:backgroundTint="#e0e0e0"
+            android:text="16:9"
+            android:textColor="@color/text_dark"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnRatio9_16"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:layout_margin="3dp"
+            android:backgroundTint="#e0e0e0"
+            android:text="9:16"
+            android:textColor="@color/text_dark"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnRatio4_3"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:layout_margin="3dp"
+            android:backgroundTint="#e0e0e0"
+            android:text="4:3"
+            android:textColor="@color/text_dark"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnRatio3_4"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:layout_margin="3dp"
+            android:backgroundTint="#e0e0e0"
+            android:text="3:4"
+            android:textColor="@color/text_dark"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnRatio21_9"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:layout_margin="3dp"
+            android:backgroundTint="#e0e0e0"
+            android:text="21:9"
+            android:textColor="@color/text_dark"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+</LinearLayout>
