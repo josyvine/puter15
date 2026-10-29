@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/llCodeBlockRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:layout_marginBottom="6dp"
+    android:background="@drawable/bg_code_block"
+    android:orientation="vertical">
+
+    <!-- Code Header Bar (#2d2d2d) -->
+    <LinearLayout
+        android:id="@+id/llCodeHeader"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:background="@drawable/bg_code_header"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp">
+
+        <TextView
+            android:id="@+id/tvCodeLanguage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="code"
+            android:textColor="#aaaaaa"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- Preview Button (for HTML/SVG/XML) -->
+        <TextView
+            android:id="@+id/btnPreviewCode"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:background="?attr/selectableItemBackground"
+            android:padding="4dp"
+            android:text="Preview"
+            android:textColor="@color/puter_blue"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <!-- Hide / Reveal Toggle Button -->
+        <TextView
+            android:id="@+id/btnToggleCodeVisibility"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:background="?attr/selectableItemBackground"
+            android:padding="4dp"
+            android:text="Hide"
+            android:textColor="#aaaaaa"
+            android:textSize="12sp" />
+
+        <!-- Copy Code Button -->
+        <TextView
+            android:id="@+id/btnCopyCode"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:padding="4dp"
+            android:text="Copy"
+            android:textColor="#ffffff"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- Monospace Code Area (Horizontal Scrolling) -->
+    <HorizontalScrollView
+        android:id="@+id/hsvCodeScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="10dp"
+        android:scrollbars="horizontal">
+
+        <TextView
+            android:id="@+id/tvCodeContent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="@color/code_text"
+            android:textSize="13sp"
+            android:textIsSelectable="true" />
+    </HorizontalScrollView>
+
+</LinearLayout>
