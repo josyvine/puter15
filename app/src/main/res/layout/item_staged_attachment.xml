@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="50dp"
+    android:layout_height="50dp"
+    android:layout_marginEnd="8dp">
+
+    <!-- Thumbnail Card -->
+    <ImageView
+        android:id="@+id/ivStagedThumbnail"
+        android:layout_width="42dp"
+        android:layout_height="42dp"
+        android:layout_gravity="bottom|start"
+        android:background="@drawable/edit_text_border"
+        android:contentDescription="Staged File"
+        android:scaleType="centerCrop" />
+
+    <!-- File Extension or Icon Overlay for Documents -->
+    <TextView
+        android:id="@+id/tvStagedFileExt"
+        android:layout_width="42dp"
+        android:layout_height="42dp"
+        android:layout_gravity="bottom|start"
+        android:gravity="center"
+        android:text="FILE"
+        android:textColor="@color/text_muted"
+        android:textSize="9sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <!-- Red Circular Remove Badge (✕) -->
+    <FrameLayout
+        android:id="@+id/btnRemoveStagedFile"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_gravity="top|end"
+        android:background="@drawable/bg_pill_badge"
+        android:backgroundTint="@color/stop_red">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="✕"
+            android:textColor="@color/white"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+    </FrameLayout>
+
+</FrameLayout>
