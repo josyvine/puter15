@@ -2,7 +2,6 @@ package com.puter.unofficial;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -17,8 +16,6 @@ import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.Vibrator;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
@@ -27,7 +24,6 @@ import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.GestureDetector;
@@ -38,14 +34,9 @@ import android.view.ViewGroup;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.webkit.CookieManager;
-import android.webkit.JavascriptInterface;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.widget.ArrayAdapter;
-import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -58,7 +49,6 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.cardview.widget.CardView;
@@ -68,10 +58,7 @@ import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.google.android.material.bottomsheet.BottomSheetBehavior;
-import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.puter.unofficial.adapters.ChatAdapter;
-import com.puter.unofficial.adapters.LogConsoleAdapter;
 import com.puter.unofficial.adapters.ModelAccordionAdapter;
 import com.puter.unofficial.adapters.StagedAttachmentsAdapter;
 import com.puter.unofficial.logging.LiveLogManager;
@@ -85,42 +72,20 @@ import com.puter.unofficial.models.StagedFile;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import okhttp3.ConnectionPool;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
-import okhttp3.ResponseBody;
 
 /**
- * 100% Pure Native Android Java Activity for Puter Unofficial.
- * Includes floating draggable system log console for deep telemetry interception,
- * high-speed parallel 20-URL batch context extraction, and live speech bubbles.
+ * Native Android Activity for Puter Unofficial.
+ * Coordinates UI timelines, live audio bridges, and dispatches to
+ * AppDialogManager, UrlContextScraper, and ModelCatalogManager.
  */
 public class MainActivity extends AppCompatActivity implements LiveLogManager.LogEventListener {
 
     private static final String TAG = "MainActivity";
-    private static final int URL_BATCH_SIZE = 20;
-    private static final int MAX_CHARS_PER_URL = 40000;
 
     // Native Views from activity_chat_native.xml
     private CoordinatorLayout chatRootLayout;
@@ -183,7 +148,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     private TextView ctxEndSession;
     private ChatMessage contextTargetMessage;
 
-    // Floating Diagnostic Log Console
+    // Floating Diagnostic Log Console Badge
     private View floatingLogView;
     private TextView tvFloatingLogBadge;
     private float dX, dY;
@@ -194,12 +159,12 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     private TextView tvLiveTranscriptTicker;
     private TextView tvLiveVoiceStatus;
 
-    // Dialog reference for Puter Authentication
-    private Dialog puterAuthDialog;
-    private boolean isPuterAuthProcessing = false;
-    private String lastInjectedPuterToken = null;
+    // Sub-System Managers (Modular Architecture)
+    private AppDialogManager dialogManager;
+    private UrlContextScraper urlContextScraper;
+    private ModelCatalogManager modelCatalogManager;
 
-    // Adapters & Managers
+    // Adapters & Core Services
     private ChatAdapter chatAdapter;
     private StagedAttachmentsAdapter stagedAttachmentsAdapter;
     private ChatSessionManager sessionManager;
@@ -219,18 +184,15 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     private boolean isAutoMode = false;
     private boolean isGenerating = false;
     private boolean isLiveVoiceConnected = false;
+    private String lastInjectedPuterToken = null;
+
     private TextToSpeech textToSpeech;
     private SpeechRecognizer speechRecognizer;
     private Vibrator vibrator;
-    private final List<AIModelDefinition> allModelsList = new ArrayList<>();
-    private final Map<String, List<AIModelDefinition>> modelsByProvider = new HashMap<>();
 
     // Live Turn Deduplication Guards
     private String lastRenderedUserText = "";
     private long lastUserTextTimestamp = 0;
-
-    // High-speed parallel connection pool for URL scraping
-    private OkHttpClient fastScraperClient;
 
     // Activity Result Launchers
     private ActivityResultLauncher<String> galleryLauncher;
@@ -250,7 +212,11 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         isLiveMode = prefs.getBoolean(AppConstants.KEY_USE_LIVE_MODELS, false);
         isAutoMode = prefs.getBoolean(AppConstants.KEY_AUTO_MODE, false);
 
-        initFastScraperClient();
+        // Initialize Managers
+        urlContextScraper = new UrlContextScraper();
+        modelCatalogManager = new ModelCatalogManager(this);
+        dialogManager = new AppDialogManager(this, prefs, sessionManager, geminiService, this::onDialogManagerAuthSuccess);
+
         NativeMarkdownParser.init(this);
 
         initViews();
@@ -269,17 +235,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         LiveLogManager.getInstance(this).addListener(this);
 
         checkAndRequestPermissions();
-    }
-
-    private void initFastScraperClient() {
-        fastScraperClient = new OkHttpClient.Builder()
-                .connectionPool(new ConnectionPool(30, 5, TimeUnit.MINUTES))
-                .connectTimeout(8, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
-                .followRedirects(true)
-                .followSslRedirects(true)
-                .retryOnConnectionFailure(true)
-                .build();
     }
 
     private void initViews() {
@@ -346,7 +301,19 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         setupAspectRatioSpinner();
     }
 
-    // --- FLOATING DIAGNOSTIC LOG CONSOLE SYSTEM ---
+    private void setupAspectRatioSpinner() {
+        if (spnAspectRatio == null) return;
+        String[] ratios = new String[]{
+                "1:1 Square (Profile/Logo)",
+                "16:9 Landscape (YouTube/Wallpapers)",
+                "9:16 Portrait (Reels/Shorts)",
+                "4:3 Classic",
+                "3:4 Portrait",
+                "21:9 Cinematic"
+        };
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, ratios);
+        spnAspectRatio.setAdapter(adapter);
+    }
 
     @SuppressLint("ClickableViewAccessibility")
     private void attachFloatingLogBadge() {
@@ -389,7 +356,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                     float deltaX = Math.abs(event.getRawX() - initialTouchX);
                     float deltaY = Math.abs(event.getRawY() - initialTouchY);
                     if (deltaX < 10 && deltaY < 10) {
-                        openSystemLogConsole();
+                        dialogManager.openSystemLogConsole();
                     }
                     return true;
             }
@@ -418,115 +385,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         if (tvFloatingLogBadge != null) {
             tvFloatingLogBadge.setVisibility(View.GONE);
         }
-    }
-
-    private void openSystemLogConsole() {
-        BottomSheetDialog dialog = new BottomSheetDialog(this, R.style.BottomSheetDialogTheme);
-        dialog.getBehavior().setState(BottomSheetBehavior.STATE_EXPANDED);
-        dialog.getBehavior().setSkipCollapsed(true);
-
-        View sheet = LayoutInflater.from(this).inflate(R.layout.dialog_system_log_console, null);
-
-        ImageView btnMinimize = sheet.findViewById(R.id.btnMinimizeConsole);
-        EditText etSearch = sheet.findViewById(R.id.etLogSearch);
-        ImageView btnClearSearch = sheet.findViewById(R.id.btnClearSearch);
-        RecyclerView rvConsole = sheet.findViewById(R.id.rvLogConsole);
-        TextView tvSummary = sheet.findViewById(R.id.tvLogCountSummary);
-        TextView btnClearAll = sheet.findViewById(R.id.btnClearAllLogs);
-        LinearLayout llEmpty = sheet.findViewById(R.id.llEmptyLogsState);
-
-        TextView chipAll = sheet.findViewById(R.id.chipFilterAll);
-        TextView chipErrors = sheet.findViewById(R.id.chipFilterErrors);
-        TextView chipCrashes = sheet.findViewById(R.id.chipFilterCrashes);
-        TextView chipProcess = sheet.findViewById(R.id.chipFilterProcess);
-        TextView chipPuter = sheet.findViewById(R.id.chipFilterPuter);
-        TextView chipGemini = sheet.findViewById(R.id.chipFilterGemini);
-        TextView chipAuth = sheet.findViewById(R.id.chipFilterAuth);
-
-        TextView[] allChips = {chipAll, chipErrors, chipCrashes, chipProcess, chipPuter, chipGemini, chipAuth};
-
-        LogConsoleAdapter consoleAdapter = new LogConsoleAdapter();
-        rvConsole.setLayoutManager(new LinearLayoutManager(this));
-        rvConsole.setAdapter(consoleAdapter);
-
-        Runnable refreshUI = () -> {
-            int displayed = consoleAdapter.getItemCount();
-            int total = consoleAdapter.getMasterCount();
-            tvSummary.setText("Showing " + displayed + " of " + total + " total logs");
-            llEmpty.setVisibility(displayed == 0 ? View.VISIBLE : View.GONE);
-        };
-
-        LiveLogManager logger = LiveLogManager.getInstance(this);
-        consoleAdapter.setLogs(logger.getAllLogs());
-        refreshUI.run();
-
-        LiveLogManager.LogEventListener dialogListener = new LiveLogManager.LogEventListener() {
-            @Override
-            public void onNewLogEntry(LogEntry entry, int totalCount, int errorCount) {
-                runOnUiThread(() -> {
-                    consoleAdapter.addEntry(entry);
-                    refreshUI.run();
-                });
-            }
-            @Override
-            public void onLogsCleared() {
-                runOnUiThread(() -> {
-                    consoleAdapter.clearLogs();
-                    refreshUI.run();
-                });
-            }
-        };
-        logger.addListener(dialogListener);
-        dialog.setOnDismissListener(d -> logger.removeListener(dialogListener));
-
-        btnMinimize.setOnClickListener(v -> dialog.dismiss());
-        btnClearAll.setOnClickListener(v -> logger.clearLogs());
-
-        etSearch.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                btnClearSearch.setVisibility(s.length() > 0 ? View.VISIBLE : View.GONE);
-                consoleAdapter.setFilterQuery(s.toString());
-                refreshUI.run();
-            }
-            @Override public void afterTextChanged(Editable s) {}
-        });
-
-        btnClearSearch.setOnClickListener(v -> etSearch.setText(""));
-
-        View.OnClickListener chipClickListener = v -> {
-            for (TextView chip : allChips) {
-                chip.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#181C2B")));
-                chip.setTextColor(Color.parseColor("#8C95AB"));
-            }
-            v.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#7C4DFF")));
-            ((TextView)v).setTextColor(Color.WHITE);
-
-            String cat = ((TextView)v).getText().toString();
-            consoleAdapter.setCategoryFilter(cat);
-            refreshUI.run();
-        };
-
-        for (TextView chip : allChips) {
-            chip.setOnClickListener(chipClickListener);
-        }
-
-        dialog.setContentView(sheet);
-        dialog.show();
-    }
-
-    private void setupAspectRatioSpinner() {
-        if (spnAspectRatio == null) return;
-        String[] ratios = new String[]{
-                "1:1 Square (Profile/Logo)",
-                "16:9 Landscape (YouTube/Wallpapers)",
-                "9:16 Portrait (Reels/Shorts)",
-                "4:3 Classic",
-                "3:4 Portrait",
-                "21:9 Cinematic"
-        };
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, ratios);
-        spnAspectRatio.setAdapter(adapter);
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -588,8 +446,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             }
 
             @Override
-            public void onAudioChunkReceived(String base64Pcm) {
-            }
+            public void onAudioChunkReceived(String base64Pcm) {}
 
             @Override
             public void onCommentaryFinished() {
@@ -624,9 +481,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         String token = AuthManager.getInstance(this).getAuthToken();
         if (token != null && !token.trim().isEmpty()) {
             String clean = token.trim();
-            if (!force && clean.equals(lastInjectedPuterToken)) {
-                return;
-            }
+            if (!force && clean.equals(lastInjectedPuterToken)) return;
             lastInjectedPuterToken = clean;
 
             String safeToken = clean.replace("'", "\\'");
@@ -650,8 +505,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     public String getActiveModelId() {
         return activeModelId;
     }
-
-    // --- PUBLIC METHODS CALLED BY WebAppInterface FOR PUTER.JS CHAT & MODELS ---
 
     public void onPuterChunkReceived(String chunk) {
         runOnUiThread(() -> {
@@ -690,7 +543,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     public void onPuterLiveModelsReceived(String rawJson) {
         runOnUiThread(() -> {
             prefs.edit().putString(AppConstants.KEY_PUTER_CACHED_LIVE_MODELS, rawJson).apply();
-            parsePuterModelsJson(rawJson);
+            modelCatalogManager.parsePuterModelsJson(rawJson);
             setupAccordionAdapter();
             updateSelectedModelDisplayText();
             Toast.makeText(MainActivity.this, "Live Puter models updated!", Toast.LENGTH_SHORT).show();
@@ -707,8 +560,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             finishGeneration();
         });
     }
-
-    // --- GEMINI LIVE CHAT BUBBLE STREAMING & CONNECTION ---
 
     public void onLiveSessionConnected() {
         runOnUiThread(() -> {
@@ -734,26 +585,18 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
     public void onLiveUserTranscript(String text) {
         runOnUiThread(() -> {
-            if (text == null || text.trim().isEmpty()) {
-                LiveLogManager.getInstance().warn("LIVE_TRANSCRIPT", "Dropped Empty User Speech", "Received empty or null text from JS bridge.");
-                return;
-            }
+            if (text == null || text.trim().isEmpty()) return;
             String cleanText = text.trim();
             long now = System.currentTimeMillis();
 
             if (cleanText.equalsIgnoreCase(lastRenderedUserText) && (now - lastUserTextTimestamp) < 2500) {
-                LiveLogManager.getInstance().info("LIVE_TRANSCRIPT", "Duplicate User Speech Suppressed",
-                        "Suppressed duplicate speech turn: \"" + cleanText + "\"");
                 return;
             }
 
             lastRenderedUserText = cleanText;
             lastUserTextTimestamp = now;
 
-            if (chatAdapter == null || currentSession == null) {
-                LiveLogManager.getInstance().error("LIVE_TRANSCRIPT", "UI State Error", "Cannot post user bubble: chatAdapter or currentSession is null.");
-                return;
-            }
+            if (chatAdapter == null || currentSession == null) return;
 
             try {
                 ChatMessage userMsg = new ChatMessage(
@@ -776,10 +619,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     public void onLiveModelTranscript(String chunk, boolean isTurnFinished) {
         runOnUiThread(() -> {
             try {
-                if (chatAdapter == null || currentSession == null) {
-                    LiveLogManager.getInstance().error("LIVE_TRANSCRIPT", "UI State Error", "Cannot post model bubble: chatAdapter or currentSession is null.");
-                    return;
-                }
+                if (chatAdapter == null || currentSession == null) return;
 
                 if (chunk != null && !chunk.isEmpty()) {
                     String clean = chunk.replaceAll("(?i)<thought[\\s\\S]*?</thought>", "")
@@ -808,7 +648,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                                 currentLiveAssistantMsg.setText(updated);
                             }
                             chatAdapter.notifyItemChanged(chatAdapter.getItemCount() - 1);
-                            LiveLogManager.getInstance().ok("LIVE_TRANSCRIPT", "Model Bubble Updated", clean);
                         }
                         rvChatTimeline.smoothScrollToPosition(chatAdapter.getItemCount() - 1);
                     }
@@ -820,7 +659,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                         chatAdapter.notifyItemChanged(chatAdapter.getItemCount() - 1);
                         sessionManager.saveSession(currentSession);
                         currentLiveAssistantMsg = null;
-                        LiveLogManager.getInstance().info("LIVE_TRANSCRIPT", "Model Bubble Finalized", "Turn completed committed to session.");
+                        LiveLogManager.getInstance().info("LIVE_TRANSCRIPT", "Model Bubble Finalized", "Turn committed.");
                     }
                 }
             } catch (Exception e) {
@@ -857,10 +696,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                 }
             }
         });
-    }
-
-    public void onLiveSessionFinished() {
-        onLiveSessionClosedWithTelemetry(1000, "Clean termination", true);
     }
 
     public void onLiveError(String err) {
@@ -927,21 +762,12 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                 break;
             }
         }
-        if (found != null) {
-            textToSpeech.setLanguage(found);
-        } else {
-            textToSpeech.setLanguage(Locale.US);
-        }
+        textToSpeech.setLanguage(found != null ? found : Locale.US);
     }
 
-    /**
-     * Immediately silences the Text-To-Speech engine.
-     */
     public void stopTts() {
         if (textToSpeech != null) {
-            try {
-                textToSpeech.stop();
-            } catch (Exception ignored) {}
+            try { textToSpeech.stop(); } catch (Exception ignored) {}
         }
     }
 
@@ -1020,12 +846,12 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
             @Override
             public void onPreviewCode(String language, String code) {
-                showCodePreviewFullscreen(code);
+                dialogManager.showCodePreviewFullscreen(code);
             }
 
             @Override
             public void onPreviewImage(String imageUrlOrBase64) {
-                showImagePreviewViewer(imageUrlOrBase64);
+                dialogManager.showImagePreviewViewer(imageUrlOrBase64, webAppInterface);
             }
 
             @Override
@@ -1043,9 +869,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
         GestureDetector gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
-            public boolean onSingleTapUp(MotionEvent e) {
-                return false;
-            }
+            public boolean onSingleTapUp(MotionEvent e) { return false; }
 
             @Override
             public void onLongPress(MotionEvent e) {
@@ -1064,14 +888,8 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             String utteranceId = "tts_" + System.currentTimeMillis();
             textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                 @Override public void onStart(String utteranceId) {}
-                @Override
-                public void onDone(String utteranceId) {
-                    runOnUiThread(onFinished);
-                }
-                @Override
-                public void onError(String utteranceId) {
-                    runOnUiThread(onFinished);
-                }
+                @Override public void onDone(String utteranceId) { runOnUiThread(onFinished); }
+                @Override public void onError(String utteranceId) { runOnUiThread(onFinished); }
             });
             textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId);
         } else {
@@ -1094,14 +912,11 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     private void setupInputDock() {
         etMessageInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                updateSendButtonState();
-            }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { updateSendButtonState(); }
             @Override public void afterTextChanged(Editable s) {}
         });
 
-        btnAttach.setOnClickListener(v -> showAttachmentPickerDialog());
+        btnAttach.setOnClickListener(v -> dialogManager.showAttachmentPickerDialog(galleryLauncher, documentLauncher));
 
         btnSendMessage.setOnClickListener(v -> {
             if (isGenerating) {
@@ -1150,7 +965,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
         menuViewHistory.setOnClickListener(v -> {
             puterDropdownMenuCard.setVisibility(View.GONE);
-            showHistoryDialog();
+            dialogManager.showHistoryDialog(currentSession, this::loadSessionIntoUI, this::loadInitialSession);
         });
 
         menuNewSession.setOnClickListener(v -> {
@@ -1171,22 +986,24 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
         menuHelp.setOnClickListener(v -> {
             puterDropdownMenuCard.setVisibility(View.GONE);
-            showHelpDialog();
+            dialogManager.showHelpDialog();
         });
 
         menuSettingsHub.setOnClickListener(v -> {
             puterDropdownMenuCard.setVisibility(View.GONE);
-            showSettingsHubDialog();
+            dialogManager.showSettingsHubDialog(currentSession, () -> {
+                loadModels();
+            });
         });
 
         menuBrowseWebsite.setOnClickListener(v -> {
             puterDropdownMenuCard.setVisibility(View.GONE);
-            showBrowserDialog();
+            dialogManager.showBrowserDialog();
         });
 
         menuTradersZone.setOnClickListener(v -> {
             puterDropdownMenuCard.setVisibility(View.GONE);
-            showCryptoBotDialog();
+            dialogManager.showCryptoBotDialog();
         });
 
         etMenuReplyLanguage.setText(prefs.getString(AppConstants.KEY_TARGET_LANGUAGE, ""));
@@ -1426,7 +1243,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         }
         currentSession.getConfig().setSystemInstructions(activeSystemMessage);
 
-        boolean isImageGen = isImageGenerationModel(activeModelId);
+        boolean isImageGen = modelCatalogManager.isImageGenerationModel(activeModelId);
         String ratio = "1:1";
         if (spnAspectRatio != null && spnAspectRatio.getSelectedItem() != null) {
             String selected = spnAspectRatio.getSelectedItem().toString();
@@ -1454,10 +1271,9 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
         boolean urlContextEnabled = prefs.getBoolean(AppConstants.KEY_URL_CONTEXT_ENABLED, false);
 
-        // --- HIGH-SPEED MULTI-BATCH CONTEXT URL PROCESSING ---
         if (urlContextEnabled) {
-            List<String> promptUrls = extractAndSanitizeUrls(finalPrompt);
-            List<String> attachmentUrls = extractUrlsFromAttachments(attachments);
+            List<String> promptUrls = UrlContextScraper.extractAndSanitizeUrls(finalPrompt);
+            List<String> attachmentUrls = UrlContextScraper.extractUrlsFromAttachments(attachments);
 
             Set<String> allUniqueUrls = new LinkedHashSet<>();
             allUniqueUrls.addAll(promptUrls);
@@ -1468,7 +1284,10 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             if (!urlList.isEmpty()) {
                 final String basePrompt = finalPrompt;
                 new Thread(() -> {
-                    String enrichedPrompt = executeHighSpeedUrlBatchProcessing(basePrompt, urlList);
+                    String enrichedPrompt = urlContextScraper.executeHighSpeedUrlBatchProcessing(basePrompt, urlList,
+                            status -> runOnUiThread(() -> {
+                                if (tvEcgStatus != null) tvEcgStatus.setText(status);
+                            }));
                     runOnUiThread(() -> {
                         tvEcgStatus.setText("AI is answering...");
                         routeGeneration(enrichedPrompt, attachments, assistantMsg);
@@ -1479,177 +1298,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         }
 
         routeGeneration(finalPrompt, attachments, assistantMsg);
-    }
-
-    /**
-     * Extracts and sanitizes URLs: strips bullets, whitespace, trailing punctuation.
-     */
-    private List<String> extractAndSanitizeUrls(String text) {
-        List<String> list = new ArrayList<>();
-        if (text == null || text.trim().isEmpty()) return list;
-
-        Pattern pattern = Pattern.compile("https?://[^\\s]+");
-        Matcher matcher = pattern.matcher(text);
-        while (matcher.find()) {
-            String rawUrl = matcher.group(0);
-            if (rawUrl != null) {
-                String clean = rawUrl.replaceAll("^[0-9]+[.)]\\s*", "")
-                                     .replaceAll("^[-*•]\\s*", "");
-                clean = clean.replaceAll("[.,;:)>\\]]+$", "");
-                clean = clean.replace(" ", "%20");
-                if (clean.startsWith("http://") || clean.startsWith("https://")) {
-                    list.add(clean);
-                }
-            }
-        }
-        return list;
-    }
-
-    /**
-     * Inspects staged text attachments (.txt, .json, .csv, .md) and extracts all embedded URLs.
-     */
-    private List<String> extractUrlsFromAttachments(List<StagedFile> attachments) {
-        List<String> list = new ArrayList<>();
-        if (attachments == null || attachments.isEmpty()) return list;
-
-        for (StagedFile file : attachments) {
-            String name = (file.getFilename() != null) ? file.getFilename().toLowerCase(Locale.US) : "";
-            String mime = (file.getMimeType() != null) ? file.getMimeType().toLowerCase(Locale.US) : "";
-
-            boolean isTextDoc = name.endsWith(".txt") || name.endsWith(".json") ||
-                                name.endsWith(".csv") || name.endsWith(".md") ||
-                                mime.startsWith("text/") || mime.contains("json");
-
-            if (isTextDoc && file.getBase64DataUri() != null) {
-                try {
-                    String cleanB64 = file.getBase64DataUri().replaceFirst("^data:[^;]+;base64,", "");
-                    byte[] bytes = Base64.decode(cleanB64, Base64.DEFAULT);
-                    String fileContent = new String(bytes, StandardCharsets.UTF_8);
-                    list.addAll(extractAndSanitizeUrls(fileContent));
-                } catch (Exception e) {
-                    LiveLogManager.getInstance().warn("URL_CONTEXT", "Attachment URL Parse Error", e.getMessage());
-                }
-            }
-        }
-        return list;
-    }
-
-    /**
-     * Executes parallel 20-URL batch scraping, live ECG loader progress, and compilation.
-     */
-    private String executeHighSpeedUrlBatchProcessing(String basePrompt, List<String> urls) {
-        long startTime = System.currentTimeMillis();
-        int totalUrls = urls.size();
-        int totalBatches = (totalUrls + URL_BATCH_SIZE - 1) / URL_BATCH_SIZE;
-
-        LiveLogManager.getInstance().process("URL_CONTEXT", "Initiating Multi-Batch URL Processing",
-                "Total URLs: " + totalUrls + " | Total Batches: " + totalBatches + " (Batch Size: " + URL_BATCH_SIZE + ")");
-
-        Map<Integer, String> fetchedResultsMap = new HashMap<>();
-
-        for (int batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-            final int currentBatchNum = batchIdx + 1;
-            int start = batchIdx * URL_BATCH_SIZE;
-            int end = Math.min(start + URL_BATCH_SIZE, totalUrls);
-            List<String> batchUrls = urls.subList(start, end);
-
-            runOnUiThread(() -> {
-                if (tvEcgStatus != null) {
-                    tvEcgStatus.setText("Analyzing Batch " + currentBatchNum + " of " + totalBatches +
-                                        " (URLs " + (start + 1) + "–" + end + ")...");
-                }
-            });
-
-            LiveLogManager.getInstance().process("URL_CONTEXT", "Batch " + currentBatchNum + " of " + totalBatches,
-                    "Dispatching parallel downloads for URLs " + (start + 1) + " to " + end);
-
-            ExecutorService batchPool = Executors.newFixedThreadPool(Math.min(batchUrls.size(), 20));
-            CountDownLatch latch = new CountDownLatch(batchUrls.size());
-
-            for (int i = 0; i < batchUrls.size(); i++) {
-                final int globalIndex = start + i;
-                final String targetUrl = batchUrls.get(i);
-
-                batchPool.execute(() -> {
-                    long fetchStart = System.currentTimeMillis();
-                    try {
-                        Request req = new Request.Builder()
-                                .url(targetUrl)
-                                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PuterUnofficial/1.4")
-                                .header("Accept", "text/plain, text/html, application/json, */*")
-                                .build();
-
-                        try (Response resp = fastScraperClient.newCall(req).execute()) {
-                            long latency = System.currentTimeMillis() - fetchStart;
-                            if (resp.isSuccessful() && resp.body() != null) {
-                                ResponseBody body = resp.body();
-
-                                char[] buffer = new char[4096];
-                                StringBuilder sb = new StringBuilder();
-                                try (BufferedReader reader = new BufferedReader(new InputStreamReader(body.byteStream(), StandardCharsets.UTF_8))) {
-                                    int read;
-                                    while ((read = reader.read(buffer, 0, buffer.length)) != -1) {
-                                        sb.append(buffer, 0, read);
-                                        if (sb.length() >= MAX_CHARS_PER_URL) {
-                                            sb.setLength(MAX_CHARS_PER_URL);
-                                            sb.append("\n...[Content clamped at 40KB for token safety]...");
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                String content = sb.toString();
-                                synchronized (fetchedResultsMap) {
-                                    fetchedResultsMap.put(globalIndex, "--- START OF FILE CONTEXT [URL: " + targetUrl + "] ---\n" +
-                                                                       content + "\n--- END OF FILE CONTEXT ---\n");
-                                }
-
-                                LiveLogManager.getInstance().ok("URL_CONTEXT", "URL [" + (globalIndex + 1) + "/" + totalUrls + "] HTTP " + resp.code(),
-                                        "Latency: " + latency + "ms | Size: " + content.length() + " chars | " + targetUrl);
-                            } else {
-                                LiveLogManager.getInstance().error("URL_CONTEXT", "URL [" + (globalIndex + 1) + "/" + totalUrls + "] HTTP " + resp.code(),
-                                        "Failed: " + resp.message() + " | Latency: " + latency + "ms | " + targetUrl);
-                            }
-                        }
-                    } catch (Exception e) {
-                        LiveLogManager.getInstance().error("URL_CONTEXT", "URL [" + (globalIndex + 1) + "/" + totalUrls + "] Fetch Exception",
-                                e.getMessage() + " | " + targetUrl);
-                    } finally {
-                        latch.countDown();
-                    }
-                });
-            }
-
-            try {
-                latch.await(15, TimeUnit.SECONDS);
-            } catch (InterruptedException ignored) {}
-            batchPool.shutdown();
-
-            LiveLogManager.getInstance().ok("URL_CONTEXT", "Batch " + currentBatchNum + " Completed",
-                    "Processed " + batchUrls.size() + " URLs in parallel.");
-        }
-
-        runOnUiThread(() -> {
-            if (tvEcgStatus != null) {
-                tvEcgStatus.setText("Compiling Complete A-to-Z Repository Report...");
-            }
-        });
-
-        StringBuilder compiledContext = new StringBuilder();
-        compiledContext.append("\n\n=== REPOSITORY & URL CONTEXT COMPILATION (Total Sources Verified: ")
-                       .append(fetchedResultsMap.size()).append("/").append(totalUrls).append(") ===\n");
-
-        for (int i = 0; i < totalUrls; i++) {
-            if (fetchedResultsMap.containsKey(i)) {
-                compiledContext.append(fetchedResultsMap.get(i)).append("\n");
-            }
-        }
-
-        long totalElapsed = System.currentTimeMillis() - startTime;
-        LiveLogManager.getInstance().ok("URL_CONTEXT", "Compilation Finished in " + (totalElapsed / 1000.0) + "s",
-                "Successfully compiled " + fetchedResultsMap.size() + " files (" + compiledContext.length() + " chars) across " + totalBatches + " batches.");
-
-        return basePrompt + "\n" + compiledContext.toString();
     }
 
     private boolean isGeminiNativeModel(String modelId) {
@@ -1734,7 +1382,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
         String ratio = currentSession.getConfig().getAspectRatio();
         String sysInst = currentSession.getConfig().getSystemInstructions();
-        boolean isImageGen = isImageGenerationModel(activeModelId);
+        boolean isImageGen = modelCatalogManager.isImageGenerationModel(activeModelId);
 
         if (headlessAudioBridge != null) {
             LiveLogManager.getInstance().info("PUTER_DISPATCH", "Handing to Headless Bridge",
@@ -1746,17 +1394,12 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         }
     }
 
-    /**
-     * Dispatches multi-turn conversations to Gemini API with full historical chat memory serialization,
-     * system instructions, and inline media context.
-     */
     private void dispatchGeminiGeneration(String prompt, List<StagedFile> attachments, ChatMessage assistantMsg) {
         currentActiveAssistantMsg = assistantMsg;
         JSONObject payload = new JSONObject();
         try {
             JSONArray contents = new JSONArray();
 
-            // 1. Serialize entire prior conversation history of this session (excluding current pending turn)
             if (currentSession != null && currentSession.getMessages() != null) {
                 List<ChatMessage> history = new ArrayList<>(currentSession.getMessages());
                 if (history.size() >= 2) {
@@ -1792,12 +1435,10 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
                     if (priorParts.length() == 0) continue;
 
-                    // Gemini strictly requires the first turn to have role: "user"
                     if (contents.length() == 0 && !"user".equals(role)) {
                         continue;
                     }
 
-                    // Merge consecutive turns with the same role to prevent Gemini HTTP 400 Bad Request
                     if (contents.length() > 0) {
                         JSONObject lastTurn = contents.getJSONObject(contents.length() - 1);
                         if (role.equals(lastTurn.optString("role"))) {
@@ -1816,7 +1457,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                 }
             }
 
-            // 2. Append the current user prompt & staged attachments
             JSONArray currentParts = new JSONArray();
             if (prompt != null && !prompt.trim().isEmpty()) {
                 JSONObject textPart = new JSONObject();
@@ -1862,7 +1502,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
             payload.put("contents", contents);
 
-            // 3. System Instructions (Custom Instructions & reply languages)
             String sysInst = (currentSession != null && currentSession.getConfig() != null) ?
                     currentSession.getConfig().getSystemInstructions() : null;
             if (sysInst == null || sysInst.trim().isEmpty()) {
@@ -1879,7 +1518,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                 payload.put("systemInstruction", sysObj);
             }
 
-            // 4. Web Grounding & Official URL Context Tool Declaration
             JSONArray toolsArray = new JSONArray();
             if (currentSession != null && currentSession.getConfig() != null && currentSession.getConfig().isWebGroundingEnabled()) {
                 JSONObject googleSearch = new JSONObject();
@@ -2031,297 +1669,47 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         rvChatTimeline.scrollToPosition(Math.max(0, chatAdapter.getItemCount() - 1));
     }
 
-    // --- MODEL ACCORDION & TAXONOMY ---
-
     private void loadModels() {
-        allModelsList.clear();
-        modelsByProvider.clear();
-
         isLiveMode = prefs.getBoolean(AppConstants.KEY_USE_LIVE_MODELS, false);
         activeProvider = prefs.getString(AppConstants.KEY_ACTIVE_PROVIDER, "Puter");
         if (menuModelSourceToggle != null) {
             menuModelSourceToggle.setText(isLiveMode ? "Use Local Models" : "Enable Live Models");
         }
 
-        if ("Gemini".equalsIgnoreCase(activeProvider)) {
-            if (isLiveMode) {
-                String cached = prefs.getString(AppConstants.KEY_GEMINI_CACHED_LIVE_MODELS, null);
-                if (cached != null && !cached.trim().isEmpty() && !cached.equals("{}") && !cached.equals("[]")) {
-                    parseGeminiModelsJson(cached);
-                    setupAccordionAdapter();
-                } else {
-                    loadLocalGeminiModels();
-                    setupAccordionAdapter();
-                }
-            } else {
-                loadLocalGeminiModels();
+        modelCatalogManager.loadModels(isLiveMode, activeProvider, new ModelCatalogManager.ModelLoadCallback() {
+            @Override
+            public void onModelsReady() {
                 setupAccordionAdapter();
+                updateSelectedModelDisplayText();
+                updateAspectRatioBarVisibility();
             }
-        } else {
-            if (isLiveMode) {
-                String cached = prefs.getString(AppConstants.KEY_PUTER_CACHED_LIVE_MODELS, null);
-                if (cached != null && !cached.trim().isEmpty() && !cached.equals("{}") && !cached.equals("[]")) {
-                    parsePuterModelsJson(cached);
-                    setupAccordionAdapter();
-                }
 
-                if (AuthManager.getInstance(this).isLoggedIn()) {
-                    Toast.makeText(this, "Syncing live models...", Toast.LENGTH_SHORT).show();
-                    syncPuterTokenToHeadless(false);
-                    if (headlessAudioBridge != null) {
-                        headlessAudioBridge.fetchPuterLiveModels();
-                    }
-                } else {
-                    if (allModelsList.isEmpty()) {
-                        loadLocalPuterModels();
-                        setupAccordionAdapter();
-                    }
+            @Override
+            public void onRequestLivePuterSync() {
+                Toast.makeText(MainActivity.this, "Syncing live models...", Toast.LENGTH_SHORT).show();
+                syncPuterTokenToHeadless(false);
+                if (headlessAudioBridge != null) {
+                    headlessAudioBridge.fetchPuterLiveModels();
                 }
-            } else {
-                loadLocalPuterModels();
-                setupAccordionAdapter();
             }
-        }
-
-        updateSelectedModelDisplayText();
-        updateAspectRatioBarVisibility();
+        });
     }
 
     private void updateSelectedModelDisplayText() {
-        boolean found = false;
-        for (AIModelDefinition m : allModelsList) {
-            if (m.getId().equalsIgnoreCase(activeModelId)) {
-                found = true;
-                selectedModelText.setText(m.getDisplayName());
-                break;
-            }
-        }
-        if (!found && !allModelsList.isEmpty()) {
-            activeModelId = allModelsList.get(0).getId();
-            selectedModelText.setText(allModelsList.get(0).getDisplayName());
-            if (currentSession != null) {
-                currentSession.setSelectedModelId(activeModelId);
-                sessionManager.saveSession(currentSession);
-            }
-        }
-    }
-
-    private void loadLocalGeminiModels() {
-        try {
-            InputStream is = getAssets().open(AppConstants.GEMINI_MODELS_JSON_FILE);
-            int size = is.available();
-            byte[] buffer = new byte[size];
-            is.read(buffer);
-            is.close();
-            String jsonStr = new String(buffer, StandardCharsets.UTF_8);
-            parseGeminiModelsJson(jsonStr);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load gemini_models.json: " + e.getMessage());
-        }
-    }
-
-    private void loadLocalPuterModels() {
-        try {
-            InputStream is = getAssets().open(AppConstants.MODELS_JSON_FILE);
-            int size = is.available();
-            byte[] buffer = new byte[size];
-            is.read(buffer);
-            is.close();
-            String jsonStr = new String(buffer, StandardCharsets.UTF_8);
-            parsePuterModelsJson(jsonStr);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to load models.json: " + e.getMessage());
-        }
-    }
-
-    private void parseGeminiModelsJson(String jsonStr) {
-        try {
-            allModelsList.clear();
-            modelsByProvider.clear();
-
-            if (jsonStr.trim().startsWith("[")) {
-                JSONArray arr = new JSONArray(jsonStr);
-                for (int i = 0; i < arr.length(); i++) {
-                    addGeminiModelNode(arr.getJSONObject(i), "Google Gemini");
-                }
-                return;
-            }
-
-            JSONObject root = new JSONObject(jsonStr);
-            Iterator<String> keys = root.keys();
-            while (keys.hasNext()) {
-                String sectionKey = keys.next();
-                JSONArray arr = root.optJSONArray(sectionKey);
-                if (arr != null) {
-                    String parentName = formatParentName(sectionKey);
-                    if (!modelsByProvider.containsKey(parentName)) {
-                        modelsByProvider.put(parentName, new ArrayList<>());
-                    }
-                    for (int i = 0; i < arr.length(); i++) {
-                        JSONObject obj = arr.getJSONObject(i);
-                        addGeminiModelNode(obj, parentName);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error parsing Gemini models: " + e.getMessage());
-        }
-    }
-
-    private void addGeminiModelNode(JSONObject obj, String parentGroup) {
-        String rawId = obj.optString("id", obj.optString("name", "")).replace("models/", "");
-        if (rawId.isEmpty()) return;
-        String name = obj.optString("name", obj.optString("displayName", rawId));
-        int ctxTokens = obj.optInt("context", 1000000);
-        String ctxStr = (ctxTokens >= 1000) ? (ctxTokens / 1000) + "k" : String.valueOf(ctxTokens);
-
-        List<String> cats = new ArrayList<>();
-        JSONArray catArr = obj.optJSONArray("categories");
-        if (catArr != null) {
-            for (int c = 0; c < catArr.length(); c++) {
-                cats.add(catArr.optString(c).toLowerCase(Locale.US));
-            }
+        AIModelDefinition m = modelCatalogManager.findModelById(activeModelId);
+        if (m != null) {
+            selectedModelText.setText(m.getDisplayName());
         } else {
-            String desc = obj.optString("description", "").toLowerCase(Locale.US);
-            String idLower = rawId.toLowerCase(Locale.US);
-            String nameLower = name.toLowerCase(Locale.US);
-            if (nameLower.contains("live preview") || idLower.contains("live-preview") || nameLower.contains("native audio") || idLower.contains("native-audio")) {
-                cats.add("live");
-                cats.add("audio");
-            } else if (idLower.contains("audio") || idLower.contains("tts") || idLower.contains("speech")) {
-                cats.add("audio");
-            }
-            if (idLower.contains("image") || idLower.contains("banana") || idLower.contains("imagen")) {
-                cats.add("image_generation");
-            }
-            if (idLower.contains("flash") || idLower.contains("pro") || desc.contains("vision")) {
-                cats.add("vision");
-                cats.add("multimodal");
-            }
-            if (cats.isEmpty()) cats.add("text_chat");
-        }
-
-        boolean isImg = cats.contains("image_generation");
-        boolean isVis = cats.contains("vision") || cats.contains("multimodal");
-        boolean isLiv = cats.contains("live");
-
-        AIModelDefinition model = new AIModelDefinition(rawId, name, parentGroup, ctxStr, isVis, isImg, isLiv);
-        model.setCategories(cats);
-        allModelsList.add(model);
-        if (!modelsByProvider.containsKey(parentGroup)) {
-            modelsByProvider.put(parentGroup, new ArrayList<>());
-        }
-        modelsByProvider.get(parentGroup).add(model);
-    }
-
-    private void parsePuterModelsJson(String jsonStr) {
-        try {
-            allModelsList.clear();
-            modelsByProvider.clear();
-
-            if (jsonStr.trim().startsWith("[")) {
-                JSONArray arr = new JSONArray(jsonStr);
-                for (int i = 0; i < arr.length(); i++) {
-                    addPuterModel(arr.getJSONObject(i), "Other");
-                }
-                return;
-            }
-
-            JSONObject root = new JSONObject(jsonStr);
-            if (root.has("result") && root.optJSONArray("result") != null) {
-                JSONArray arr = root.getJSONArray("result");
-                for (int i = 0; i < arr.length(); i++) {
-                    addPuterModel(arr.getJSONObject(i), "Other");
-                }
-                return;
-            }
-
-            if (root.has("models") && root.optJSONArray("models") != null) {
-                JSONArray arr = root.getJSONArray("models");
-                for (int i = 0; i < arr.length(); i++) {
-                    addPuterModel(arr.getJSONObject(i), "Other");
-                }
-                return;
-            }
-
-            Iterator<String> keys = root.keys();
-            while (keys.hasNext()) {
-                String providerKey = keys.next();
-                JSONArray arr = root.optJSONArray(providerKey);
-                if (arr != null) {
-                    String providerDisplay = capitalize(providerKey);
-                    if (!modelsByProvider.containsKey(providerDisplay)) {
-                        modelsByProvider.put(providerDisplay, new ArrayList<>());
-                    }
-                    for (int i = 0; i < arr.length(); i++) {
-                        addPuterModel(arr.getJSONObject(i), providerDisplay);
-                    }
+            List<AIModelDefinition> list = modelCatalogManager.getAllModelsList();
+            if (!list.isEmpty()) {
+                activeModelId = list.get(0).getId();
+                selectedModelText.setText(list.get(0).getDisplayName());
+                if (currentSession != null) {
+                    currentSession.setSelectedModelId(activeModelId);
+                    sessionManager.saveSession(currentSession);
                 }
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Error parsing Puter models: " + e.getMessage());
         }
-    }
-
-    private void addPuterModel(JSONObject obj, String defaultProvider) {
-        String id = obj.optString("id", obj.optString("name", ""));
-        if (id.isEmpty()) return;
-        String name = obj.optString("name", id);
-        String provider = capitalize(obj.optString("provider", obj.optString("vendor", defaultProvider)));
-        if (!modelsByProvider.containsKey(provider)) {
-            modelsByProvider.put(provider, new ArrayList<>());
-        }
-        int ctx = obj.optInt("context", 128000);
-        String ctxStr = (ctx >= 1000) ? (ctx / 1000) + "k" : String.valueOf(ctx);
-
-        List<String> cats = new ArrayList<>();
-        JSONArray catArr = obj.optJSONArray("categories");
-        if (catArr != null && catArr.length() > 0) {
-            for (int c = 0; c < catArr.length(); c++) {
-                cats.add(catArr.optString(c).toLowerCase(Locale.US));
-            }
-        } else {
-            cats = inferPuterCategories(id, name, obj.optString("description", ""));
-        }
-
-        boolean imgGen = cats.contains("image_generation");
-        boolean vision = cats.contains("vision") || cats.contains("multimodal");
-
-        AIModelDefinition m = new AIModelDefinition(id, name, provider, ctxStr, vision, imgGen, false);
-        m.setCategories(cats);
-        allModelsList.add(m);
-        modelsByProvider.get(provider).add(m);
-    }
-
-    private List<String> inferPuterCategories(String id, String name, String desc) {
-        String combined = (id + " " + name + " " + desc).toLowerCase(Locale.US);
-        List<String> cats = new ArrayList<>();
-        if (combined.contains("image") || combined.contains("dall-e") || combined.contains("flux") ||
-                combined.contains("stable-diffusion") || combined.contains("imagen") || combined.contains("midjourney") ||
-                combined.contains("txt2img") || combined.contains("banana")) {
-            cats.add("image_generation");
-        }
-        if (combined.contains("vision") || combined.contains("vl") || combined.contains("4o") ||
-                combined.contains("gemini") || combined.contains("multimodal") || combined.contains("omni")) {
-            cats.add("vision");
-            cats.add("multimodal");
-        }
-        if (combined.contains("coder") || combined.contains("code") || combined.contains("deepseek") ||
-                combined.contains("starcoder") || combined.contains("qwen") || combined.contains("wizardcoder")) {
-            cats.add("code");
-        }
-        if (combined.contains("reasoning") || combined.contains("thinking") || combined.contains("r1") ||
-                combined.contains("o1") || combined.contains("o3")) {
-            cats.add("reasoning");
-        }
-        if (combined.contains("live") || combined.contains("audio") || combined.contains("voice") || combined.contains("tts")) {
-            cats.add("audio");
-            cats.add("live");
-        }
-        if (cats.isEmpty() || !cats.contains("image_generation")) {
-            cats.add("text_chat");
-        }
-        return cats;
     }
 
     private void setupAccordionAdapter() {
@@ -2340,87 +1728,16 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             Toast.makeText(MainActivity.this, "Selected: " + model.getDisplayName(), Toast.LENGTH_SHORT).show();
         });
 
-        List<ModelAccordionAdapter.AccordionItem> items = new ArrayList<>();
-
-        List<AIModelDefinition> sortedAll = new ArrayList<>(allModelsList);
-        Collections.sort(sortedAll, (a, b) -> a.getDisplayName().compareToIgnoreCase(b.getDisplayName()));
-        items.add(ModelAccordionAdapter.AccordionItem.createHeader("★ All Models", sortedAll.size()));
-        for (AIModelDefinition m : sortedAll) {
-            items.add(ModelAccordionAdapter.AccordionItem.createChild(m, "★ All Models"));
-        }
-
-        for (Map.Entry<String, List<AIModelDefinition>> entry : modelsByProvider.entrySet()) {
-            String pName = "Parent: " + entry.getKey();
-            items.add(ModelAccordionAdapter.AccordionItem.createHeader(pName, entry.getValue().size()));
-            for (AIModelDefinition m : entry.getValue()) {
-                items.add(ModelAccordionAdapter.AccordionItem.createChild(m, pName));
-            }
-        }
-
-        Map<String, List<AIModelDefinition>> byCategory = new HashMap<>();
-        for (AIModelDefinition m : allModelsList) {
-            List<String> cats = m.getCategories();
-            if (cats == null || cats.isEmpty()) cats = m.getCapabilityTags();
-            for (String cat : cats) {
-                String formatted = "Category: " + formatCategoryName(cat);
-                if (!byCategory.containsKey(formatted)) {
-                    byCategory.put(formatted, new ArrayList<>());
-                }
-                byCategory.get(formatted).add(m);
-            }
-        }
-        for (Map.Entry<String, List<AIModelDefinition>> entry : byCategory.entrySet()) {
-            items.add(ModelAccordionAdapter.AccordionItem.createHeader(entry.getKey(), entry.getValue().size()));
-            for (AIModelDefinition m : entry.getValue()) {
-                items.add(ModelAccordionAdapter.AccordionItem.createChild(m, entry.getKey()));
-            }
-        }
-
-        modelAccordionAdapter.setData(items, activeModelId);
+        modelAccordionAdapter.setData(modelCatalogManager.buildAccordionItems(activeModelId), activeModelId);
         rvAccordionModels.setLayoutManager(new LinearLayoutManager(this));
         rvAccordionModels.setAdapter(modelAccordionAdapter);
     }
 
-    private String formatCategoryName(String cat) {
-        if (cat == null) return "General";
-        return cat.replace("_", " ").toUpperCase(Locale.US);
-    }
-
-    private String formatParentName(String raw) {
-        if (raw == null || raw.isEmpty()) return "Other";
-        return raw.replace("_", " ").toUpperCase(Locale.US);
-    }
-
-    private String capitalize(String str) {
-        if (str == null || str.isEmpty()) return "";
-        return str.substring(0, 1).toUpperCase(Locale.US) + str.substring(1);
-    }
-
-    private boolean isImageGenerationModel(String modelId) {
-        if (modelId == null) return false;
-        String mLower = modelId.toLowerCase(Locale.US);
-        if (mLower.contains("banana") || mLower.contains("dall-e") || mLower.contains("flux") ||
-            mLower.contains("imagen") || mLower.contains("midjourney") || mLower.contains("txt2img")) {
-            return true;
-        }
-        for (AIModelDefinition def : allModelsList) {
-            if (def.getId().equalsIgnoreCase(modelId)) {
-                List<String> cats = def.getCategories();
-                if (cats != null && (cats.contains("image_generation") || cats.contains("image"))) {
-                    return true;
-                }
-            }
-        }
-        return PuterChatManager.isImageModel(modelId);
-    }
-
     private void updateAspectRatioBarVisibility() {
         if (aspectRatioBar == null) return;
-        boolean isImage = isImageGenerationModel(activeModelId);
+        boolean isImage = modelCatalogManager.isImageGenerationModel(activeModelId);
         aspectRatioBar.setVisibility(isImage ? View.VISIBLE : View.GONE);
     }
-
-    // --- LIVE VOICE AGENT ---
 
     private void launchLiveVoiceAgent() {
         stopTts();
@@ -2453,7 +1770,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             new AlertDialog.Builder(this)
                     .setTitle("Gemini Live")
                     .setMessage("Please configure a valid Gemini Access API key first in Settings.")
-                    .setPositiveButton("Open Settings", (d, w) -> showGeminiSettingsDialog())
+                    .setPositiveButton("Open Settings", (d, w) -> dialogManager.showGeminiSettingsDialog(this::loadModels))
                     .setNegativeButton("Cancel", null)
                     .show();
             return;
@@ -2478,7 +1795,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         }
 
         if (!alreadyLiveModel) {
-            for (AIModelDefinition m : allModelsList) {
+            for (AIModelDefinition m : modelCatalogManager.getAllModelsList()) {
                 String dName = (m.getDisplayName() != null) ? m.getDisplayName().toLowerCase(Locale.US) : "";
                 String mId = (m.getId() != null) ? m.getId().toLowerCase(Locale.US) : "";
                 if (dName.contains("3.1 flash live") || mId.contains("3.1-flash-live")) {
@@ -2549,298 +1866,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         }
     }
 
-    // --- DIALOGS & OVERFLOWS ---
-
-    private void showHistoryDialog() {
-        BottomSheetDialog dialog = new BottomSheetDialog(this, R.style.BottomSheetDialogTheme);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(32, 32, 32, 32);
-
-        TextView title = new TextView(this);
-        title.setText("Chat History");
-        title.setTextSize(18);
-        title.setTextColor(Color.parseColor("#333333"));
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        root.addView(title);
-
-        RecyclerView rv = new RecyclerView(this);
-        rv.setLayoutManager(new LinearLayoutManager(this));
-        List<ChatSession> sessions = sessionManager.getAllSessions();
-
-        SessionHistoryAdapter adapter = new SessionHistoryAdapter(sessions, session -> {
-            loadSessionIntoUI(session);
-            dialog.dismiss();
-        }, session -> {
-            sessionManager.deleteSession(session.getId());
-            if (currentSession != null && currentSession.getId().equals(session.getId())) {
-                loadInitialSession();
-            }
-            dialog.dismiss();
-        });
-        rv.setAdapter(adapter);
-        root.addView(rv);
-
-        dialog.setContentView(root);
-        dialog.show();
-    }
-
-    private void showSettingsHubDialog() {
-        BottomSheetDialog dialog = new BottomSheetDialog(this, R.style.BottomSheetDialogTheme);
-        View sheet = LayoutInflater.from(this).inflate(R.layout.dialog_settings_hub, null);
-
-        sheet.findViewById(R.id.btnHubCustomInstruction).setOnClickListener(v -> {
-            dialog.dismiss();
-            showCustomInstructionDialog();
-        });
-
-        sheet.findViewById(R.id.btnHubGeminiSettings).setOnClickListener(v -> {
-            dialog.dismiss();
-            showGeminiSettingsDialog();
-        });
-
-        sheet.findViewById(R.id.btnHubNostrIdentity).setOnClickListener(v -> {
-            dialog.dismiss();
-            showNostrIdentityDialog();
-        });
-
-        sheet.findViewById(R.id.btnHubClose).setOnClickListener(v -> dialog.dismiss());
-
-        dialog.setContentView(sheet);
-        dialog.show();
-    }
-
-    private void showCustomInstructionDialog() {
-        BottomSheetDialog dialog = new BottomSheetDialog(this, R.style.BottomSheetDialogTheme);
-        View sheet = LayoutInflater.from(this).inflate(R.layout.dialog_custom_instruction, null);
-        EditText et = sheet.findViewById(R.id.etCustomInstructionInput);
-        et.setText(prefs.getString(AppConstants.KEY_CUSTOM_INSTRUCTION, ""));
-
-        sheet.findViewById(R.id.btnSaveCustom).setOnClickListener(v -> {
-            String val = et.getText().toString().trim();
-            prefs.edit().putString(AppConstants.KEY_CUSTOM_INSTRUCTION, val).apply();
-            if (currentSession != null) {
-                currentSession.getConfig().setSystemInstructions(val);
-                sessionManager.saveSession(currentSession);
-            }
-            Toast.makeText(this, "Custom Instruction saved", Toast.LENGTH_SHORT).show();
-            dialog.dismiss();
-        });
-
-        sheet.findViewById(R.id.btnCancelCustom).setOnClickListener(v -> dialog.dismiss());
-        dialog.setContentView(sheet);
-        dialog.show();
-    }
-
-    private void showGeminiSettingsDialog() {
-        BottomSheetDialog dialog = new BottomSheetDialog(this, R.style.BottomSheetDialogTheme);
-        View sheet = LayoutInflater.from(this).inflate(R.layout.dialog_gemini_settings, null);
-
-        EditText etKey = sheet.findViewById(R.id.etGeminiApiKey);
-        TextView tvStatus = sheet.findViewById(R.id.tvGeminiFetchStatus);
-        TextView tvGrounding = sheet.findViewById(R.id.tvGroundingMode);
-        TextView tvVoice = sheet.findViewById(R.id.tvVoiceCharacter);
-
-        etKey.setText(prefs.getString(AppConstants.KEY_GEMINI_API_KEY, ""));
-
-        String[] groundingModes = new String[]{"None (Standard)", "Google Search", "Google Maps"};
-        String currentGrounding = prefs.getString("gemini_grounding_mode", "None (Standard)");
-        if (tvGrounding != null) {
-            tvGrounding.setText(currentGrounding);
-            tvGrounding.setOnClickListener(v -> {
-                new AlertDialog.Builder(this)
-                        .setTitle("Select Grounding Mode")
-                        .setItems(groundingModes, (d, which) -> {
-                            String selected = groundingModes[which];
-                            prefs.edit().putString("gemini_grounding_mode", selected).apply();
-                            tvGrounding.setText(selected);
-                        })
-                        .show();
-            });
-        }
-
-        String[] voiceCharacters = new String[]{
-                "Aoede (Breezy)", "Charon (Informative)", "Kore (Firm)",
-                "Puck (Upbeat)", "Fenrir (Excitable)", "Leda (Youthful)", "Zephyr (Bright)"
-        };
-        String currentVoice = prefs.getString("gemini_voice_character", "Leda (Youthful)");
-        if (tvVoice != null) {
-            tvVoice.setText(currentVoice);
-            tvVoice.setOnClickListener(v -> {
-                new AlertDialog.Builder(this)
-                        .setTitle("Select Voice Character")
-                        .setItems(voiceCharacters, (d, which) -> {
-                            String selected = voiceCharacters[which];
-                            prefs.edit().putString("gemini_voice_character", selected).apply();
-                            tvVoice.setText(selected);
-                        })
-                        .show();
-            });
-        }
-
-        sheet.findViewById(R.id.btnFetchGeminiModels).setOnClickListener(v -> {
-            String key = etKey.getText().toString().trim();
-            if (key.isEmpty()) {
-                Toast.makeText(this, "Enter API Key first", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            prefs.edit().putString(AppConstants.KEY_GEMINI_API_KEY, key).apply();
-            tvStatus.setText("Fetching models from Google...");
-            geminiService.fetchAvailableModels(key, new GeminiService.GeminiModelsListener() {
-                @Override
-                public void onModelsFetched(String json) {
-                    runOnUiThread(() -> {
-                        prefs.edit().putString(AppConstants.KEY_GEMINI_CACHED_LIVE_MODELS, json).apply();
-                        loadModels();
-                        tvStatus.setText("Models fetched successfully!");
-                        Toast.makeText(MainActivity.this, "Live Gemini models updated!", Toast.LENGTH_SHORT).show();
-                    });
-                }
-
-                @Override
-                public void onError(String errorMessage) {
-                    runOnUiThread(() -> {
-                        tvStatus.setText("Fetch error: " + errorMessage);
-                        Toast.makeText(MainActivity.this, "Fetch error: " + errorMessage, Toast.LENGTH_SHORT).show();
-                    });
-                }
-            });
-        });
-
-        sheet.findViewById(R.id.btnGeminiSettingsDone).setOnClickListener(v -> {
-            prefs.edit().putString(AppConstants.KEY_GEMINI_API_KEY, etKey.getText().toString().trim()).apply();
-            Toast.makeText(this, "Gemini settings saved", Toast.LENGTH_SHORT).show();
-            dialog.dismiss();
-        });
-
-        sheet.findViewById(R.id.btnGeminiSettingsBack).setOnClickListener(v -> dialog.dismiss());
-        dialog.setContentView(sheet);
-        dialog.show();
-    }
-
-    private void showNostrIdentityDialog() {
-        BottomSheetDialog dialog = new BottomSheetDialog(this, R.style.BottomSheetDialogTheme);
-        View sheet = LayoutInflater.from(this).inflate(R.layout.dialog_nostr_identity, null);
-
-        TextView tvNpub = sheet.findViewById(R.id.tvNostrNpub);
-        TextView tvNsec = sheet.findViewById(R.id.tvNostrNsec);
-
-        String npub = prefs.getString(AppConstants.KEY_NOSTR_PUBLIC_KEY, null);
-        String nsec = prefs.getString(AppConstants.KEY_NOSTR_PRIVATE_KEY, null);
-
-        if (npub == null || nsec == null) {
-            String[] pair = NostrKeyManager.generateKeyPair();
-            nsec = pair[0];
-            npub = pair[1];
-            prefs.edit().putString(AppConstants.KEY_NOSTR_PRIVATE_KEY, nsec)
-                    .putString(AppConstants.KEY_NOSTR_PUBLIC_KEY, npub).apply();
-        }
-
-        final String finalNpub = npub;
-        final String finalNsec = nsec;
-        tvNpub.setText(finalNpub);
-        tvNsec.setText(finalNsec);
-
-        sheet.findViewById(R.id.btnCopyNpub).setOnClickListener(v -> copyText(finalNpub));
-        sheet.findViewById(R.id.btnCopyNsec).setOnClickListener(v -> copyText(finalNsec));
-
-        sheet.findViewById(R.id.btnNostrDone).setOnClickListener(v -> dialog.dismiss());
-        sheet.findViewById(R.id.btnNostrBack).setOnClickListener(v -> dialog.dismiss());
-
-        dialog.setContentView(sheet);
-        dialog.show();
-    }
-
-    private void showBrowserDialog() {
-        BottomSheetDialog dialog = new BottomSheetDialog(this, R.style.BottomSheetDialogTheme);
-        View sheet = LayoutInflater.from(this).inflate(R.layout.dialog_code_preview_fullscreen, null);
-        WebView wv = sheet.findViewById(R.id.wvCodePreview);
-        wv.getSettings().setJavaScriptEnabled(true);
-        wv.loadUrl(AppConstants.LOCAL_BROWSER_URL);
-        sheet.findViewById(R.id.btnCloseCodePreview).setOnClickListener(v -> dialog.dismiss());
-        sheet.findViewById(R.id.btnReloadCodePreview).setOnClickListener(v -> wv.reload());
-        dialog.setContentView(sheet);
-        dialog.show();
-    }
-
-    private void showCryptoBotDialog() {
-        BottomSheetDialog dialog = new BottomSheetDialog(this, R.style.BottomSheetDialogTheme);
-        View sheet = LayoutInflater.from(this).inflate(R.layout.dialog_code_preview_fullscreen, null);
-        WebView wv = sheet.findViewById(R.id.wvCodePreview);
-        wv.getSettings().setJavaScriptEnabled(true);
-        wv.loadUrl(AppConstants.LOCAL_BOT_URL);
-        sheet.findViewById(R.id.btnCloseCodePreview).setOnClickListener(v -> dialog.dismiss());
-        sheet.findViewById(R.id.btnReloadCodePreview).setOnClickListener(v -> wv.reload());
-        dialog.setContentView(sheet);
-        dialog.show();
-    }
-
-    private void showHelpDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("Puter Unofficial Help")
-                .setMessage("Pure Native Android client for Puter AI, Gemini Live Audio commentary, and multi-model completions.\n\nDeveloped by Josyvine.")
-                .setPositiveButton("OK", null)
-                .show();
-    }
-
-    private void showCodePreviewFullscreen(String code) {
-        BottomSheetDialog dialog = new BottomSheetDialog(this, R.style.BottomSheetDialogTheme);
-        View sheet = LayoutInflater.from(this).inflate(R.layout.dialog_code_preview_fullscreen, null);
-        WebView wv = sheet.findViewById(R.id.wvCodePreview);
-        wv.getSettings().setJavaScriptEnabled(true);
-        wv.loadDataWithBaseURL(null, code, "text/html", "UTF-8", null);
-
-        sheet.findViewById(R.id.btnCloseCodePreview).setOnClickListener(v -> dialog.dismiss());
-        sheet.findViewById(R.id.btnReloadCodePreview).setOnClickListener(v -> wv.loadDataWithBaseURL(null, code, "text/html", "UTF-8", null));
-        dialog.setContentView(sheet);
-        dialog.show();
-    }
-
-    private void showImagePreviewViewer(String base64OrUrl) {
-        BottomSheetDialog dialog = new BottomSheetDialog(this, R.style.BottomSheetDialogTheme);
-        View sheet = LayoutInflater.from(this).inflate(R.layout.dialog_image_preview_viewer, null);
-        ImageView iv = sheet.findViewById(R.id.ivFullPreviewImage);
-
-        if (base64OrUrl.startsWith("data:image")) {
-            String clean = base64OrUrl.replaceFirst("^data:image/[a-zA-Z]+;base64,", "");
-            byte[] decoded = Base64.decode(clean, Base64.DEFAULT);
-            Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
-            iv.setImageBitmap(bmp);
-        }
-
-        sheet.findViewById(R.id.btnCloseImagePreview).setOnClickListener(v -> dialog.dismiss());
-        sheet.findViewById(R.id.btnSaveImageToGallery).setOnClickListener(v -> {
-            if (webAppInterface != null) webAppInterface.saveImageToGallery(base64OrUrl, "Puter_" + System.currentTimeMillis() + ".jpg");
-        });
-        sheet.findViewById(R.id.btnShareImage).setOnClickListener(v -> Toast.makeText(this, "Sharing image...", Toast.LENGTH_SHORT).show());
-
-        dialog.setContentView(sheet);
-        dialog.show();
-    }
-
-    private void showAttachmentPickerDialog() {
-        BottomSheetDialog dialog = new BottomSheetDialog(this, R.style.BottomSheetDialogTheme);
-        View sheet = LayoutInflater.from(this).inflate(R.layout.dialog_attachment_picker, null);
-
-        sheet.findViewById(R.id.btnOptionGallery).setOnClickListener(v -> {
-            dialog.dismiss();
-            galleryLauncher.launch("image/*");
-        });
-
-        sheet.findViewById(R.id.btnOptionDocument).setOnClickListener(v -> {
-            dialog.dismiss();
-            documentLauncher.launch("*/*");
-        });
-
-        sheet.findViewById(R.id.btnOptionCamera).setOnClickListener(v -> {
-            dialog.dismiss();
-            galleryLauncher.launch("image/*");
-        });
-
-        dialog.setContentView(sheet);
-        dialog.show();
-    }
-
     public void showUniversalContextMenu(ChatMessage message, float rawX, float rawY) {
         contextTargetMessage = message;
         if (customContextMenuCard == null) return;
@@ -2891,14 +1916,10 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             float targetX = rawX;
             float targetY = rawY;
 
-            if (targetX + menuWidth > screenWidth - 32) {
-                targetX = targetX - menuWidth;
-            }
+            if (targetX + menuWidth > screenWidth - 32) targetX = targetX - menuWidth;
             if (targetX < 32) targetX = 32;
 
-            if (targetY + menuHeight > screenHeight - 120) {
-                targetY = targetY - menuHeight;
-            }
+            if (targetY + menuHeight > screenHeight - 120) targetY = targetY - menuHeight;
             if (targetY < 120) targetY = 120;
 
             customContextMenuCard.setX(targetX);
@@ -2906,8 +1927,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             customContextMenuCard.setVisibility(View.VISIBLE);
         });
     }
-
-    // --- PUTER AUTHENTICATION POPUP ---
 
     private void toggleAuthMirror() {
         boolean loggedIn = AuthManager.getInstance(this).isLoggedIn();
@@ -2920,263 +1939,17 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             if (headlessAudioWebView != null) {
                 headlessAudioWebView.evaluateJavascript("try { localStorage.removeItem('puter.auth.token'); } catch(e){}; if (typeof puter !== 'undefined') { puter.authToken = null; if (puter.auth) puter.auth.signOut(); }", null);
             }
-            LiveLogManager.getInstance().ok("PUTER_AUTH", "Sign Out Complete", "Puter token cleared from AuthManager and headless storage.");
+            LiveLogManager.getInstance().ok("PUTER_AUTH", "Sign Out Complete", "Puter token cleared.");
         } else {
             LiveLogManager.getInstance().process("PUTER_AUTH", "Sign In Selected", "Launching OAuth Popup window.");
-            openPuterAuthDialog();
+            dialogManager.openPuterAuthDialog();
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    private void openPuterAuthDialog() {
-        if (puterAuthDialog != null && puterAuthDialog.isShowing()) {
-            puterAuthDialog.dismiss();
-        }
-        isPuterAuthProcessing = false;
-
-        LinearLayout dialogLayout = new LinearLayout(this);
-        dialogLayout.setOrientation(LinearLayout.VERTICAL);
-        dialogLayout.setBackgroundColor(Color.WHITE);
-
-        final WebView popupWebView = new WebView(this);
-
-        Button closeButton = new Button(this);
-        closeButton.setText("Close Window (Tap when Signed In)");
-        closeButton.setBackgroundColor(Color.parseColor("#1a73e8"));
-        closeButton.setTextColor(Color.WHITE);
-        closeButton.setOnClickListener(v -> {
-            LiveLogManager.getInstance().warn("PUTER_AUTH", "Manual Window Close", "User tapped Close Button. Inspecting storage for token...");
-            CookieManager.getInstance().flush();
-            extractTokensFromWebView(popupWebView, true);
-        });
-
-        dialogLayout.addView(closeButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        dialogLayout.addView(popupWebView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
-
-        WebSettings ws = popupWebView.getSettings();
-        ws.setJavaScriptEnabled(true);
-        ws.setDomStorageEnabled(true);
-        ws.setDatabaseEnabled(true);
-        ws.setJavaScriptCanOpenWindowsAutomatically(true);
-        ws.setSupportMultipleWindows(true);
-
-        String userAgent = ws.getUserAgentString().replace("; wv", "");
-        ws.setUserAgentString(userAgent);
-
-        CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(popupWebView, true);
-
-        popupWebView.addJavascriptInterface(new Object() {
-            @JavascriptInterface
-            public void onAuthMessageReceived(String rawData) {
-                LiveLogManager.getInstance().ok("PUTER_AUTH", "PostMessage Captured", "Raw: " + rawData);
-                runOnUiThread(() -> extractTokensFromWebView(popupWebView, true));
-            }
-
-            @JavascriptInterface
-            public void onTokenExtracted(String token) {
-                if (token != null && !token.trim().isEmpty()) {
-                    String clean = token.replace("\"", "").replace("'", "").trim();
-                    LiveLogManager.getInstance().ok("PUTER_AUTH", "Token via JS Bridge", "Token len: " + clean.length());
-                    AuthManager.getInstance(MainActivity.this).saveAuthToken(clean);
-                    syncPuterTokenToHeadless(true);
-                    runOnUiThread(() -> completePuterAuth());
-                }
-            }
-        }, "AndroidPuterAuthBridge");
-
-        popupWebView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onCloseWindow(WebView window) {
-                LiveLogManager.getInstance().ok("PUTER_AUTH", "SDK Issued window.close()", "Finalizing auth extraction.");
-                runOnUiThread(() -> extractTokensFromWebView(popupWebView, true));
-            }
-        });
-
-        final String openerPolyfillScript =
-                "javascript:(function() {" +
-                "  if (!window.opener) {" +
-                "    window.opener = {" +
-                "      postMessage: function(data, origin) {" +
-                "        if (window.AndroidPuterAuthBridge) {" +
-                "          window.AndroidPuterAuthBridge.onAuthMessageReceived(typeof data === 'object' ? JSON.stringify(data) : String(data));" +
-                "        }" +
-                "      }" +
-                "    };" +
-                "  }" +
-                "  try {" +
-                "    var token = localStorage.getItem('puter.auth.token') || (typeof puter !== 'undefined' && puter.authToken);" +
-                "    if (token && window.AndroidPuterAuthBridge) {" +
-                "      window.AndroidPuterAuthBridge.onTokenExtracted(token);" +
-                "    }" +
-                "  } catch(e) {}" +
-                "})()";
-
-        popupWebView.setWebViewClient(new WebViewClient() {
-            @Override
-            public void onPageStarted(WebView view, String url, Bitmap favicon) {
-                super.onPageStarted(view, url, favicon);
-                LiveLogManager.getInstance().process("PUTER_AUTH", "OAuth Page Loading", "URL: " + url);
-                view.evaluateJavascript(openerPolyfillScript, null);
-                checkAuthRedirect(url, view);
-            }
-
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                if (request != null && request.getUrl() != null) {
-                    return checkAuthRedirect(request.getUrl().toString(), view);
-                }
-                return false;
-            }
-
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                return checkAuthRedirect(url, view);
-            }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                super.onPageFinished(view, url);
-                LiveLogManager.getInstance().ok("PUTER_AUTH", "OAuth Page Finished", "URL: " + url);
-                view.evaluateJavascript(openerPolyfillScript, null);
-                CookieManager.getInstance().flush();
-
-                extractTokensFromWebView(view, false);
-                checkAuthRedirect(url, view);
-            }
-
-            private boolean checkAuthRedirect(String url, WebView view) {
-                if (url == null || isPuterAuthProcessing) return false;
-                AuthManager auth = AuthManager.getInstance(MainActivity.this);
-                if (auth.isAuthCallback(url)) {
-                    isPuterAuthProcessing = true;
-                    LiveLogManager.getInstance().ok("PUTER_AUTH", "Callback Detected", "Callback URL matched: " + url);
-                    extractTokensFromWebView(view, true);
-                    return true;
-                }
-                return false;
-            }
-        });
-
-        puterAuthDialog = new Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar);
-        puterAuthDialog.setContentView(dialogLayout);
-        puterAuthDialog.show();
-
-        String sdkAuthUrl = "https://puter.com/?embedded_in_popup=true&request_auth=true";
-        java.util.Map<String, String> headers = new java.util.HashMap<>();
-        headers.put("Origin", "https://appassets.androidplatform.net");
-        headers.put("Referer", "https://appassets.androidplatform.net/");
-        popupWebView.loadUrl(sdkAuthUrl, headers);
-    }
-
-    private void extractTokensFromWebView(WebView webView, boolean finalizeOnFound) {
-        if (webView == null) return;
-
-        try {
-            CookieManager cm = CookieManager.getInstance();
-            String cookies = cm.getCookie("https://puter.com");
-            if (cookies == null || cookies.isEmpty()) {
-                cookies = cm.getCookie("https://api.puter.com");
-            }
-            if (cookies != null && !cookies.isEmpty()) {
-                String[] cookieList = cookies.split(";");
-                List<String> foundKeys = new ArrayList<>();
-                for (String c : cookieList) {
-                    String[] kv = c.trim().split("=");
-                    if (kv.length >= 2) {
-                        String key = kv[0].trim();
-                        String val = kv[1].trim();
-                        foundKeys.add(key);
-
-                        if (key.equalsIgnoreCase("token") ||
-                            key.equalsIgnoreCase("puter_auth_token") ||
-                            key.equalsIgnoreCase("puter_token") ||
-                            key.equalsIgnoreCase("auth_token") ||
-                            key.equalsIgnoreCase("puter-auth")) {
-
-                            if (!val.isEmpty()) {
-                                LiveLogManager.getInstance().ok("PUTER_AUTH", "Token Discovered in Cookies", "Key [" + key + "] len: " + val.length());
-                                AuthManager.getInstance(MainActivity.this).saveAuthToken(val);
-                                syncPuterTokenToHeadless(true);
-                                if (finalizeOnFound) {
-                                    completePuterAuth();
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-                LiveLogManager.getInstance().info("PUTER_AUTH", "Cookies Scanned", "Keys: " + foundKeys);
-            } else {
-                LiveLogManager.getInstance().warn("PUTER_AUTH", "Cookie Jar Empty", "CookieManager returned null/empty for puter.com");
-            }
-        } catch (Exception e) {
-            LiveLogManager.getInstance().error("PUTER_AUTH", "Cookie Scan Error", e.getMessage());
-        }
-
-        String jsQuery = "(function(){" +
-                "  var t = '';" +
-                "  try { t = localStorage.getItem('puter.auth.token') || localStorage.getItem('token') || ''; } catch(e){}" +
-                "  if (!t && typeof puter !== 'undefined') {" +
-                "    t = puter.authToken || (puter.auth && puter.auth.token) || '';" +
-                "  }" +
-                "  return t;" +
-                "})()";
-
-        webView.evaluateJavascript(jsQuery, val -> {
-            if (val != null && !val.equals("null") && !val.trim().isEmpty()) {
-                String clean = val.replace("\"", "").replace("'", "").trim();
-                if (!clean.isEmpty()) {
-                    LiveLogManager.getInstance().ok("PUTER_AUTH", "Token Extracted from LocalStorage", "Len: " + clean.length());
-                    AuthManager.getInstance(MainActivity.this).saveAuthToken(clean);
-                    syncPuterTokenToHeadless(true);
-                    if (finalizeOnFound) {
-                        completePuterAuth();
-                    }
-                    return;
-                }
-            }
-            if (finalizeOnFound) {
-                completePuterAuth();
-            }
-        });
-    }
-
-    private void completePuterAuth() {
-        if (isPuterAuthProcessing && puterAuthDialog == null) return;
-        isPuterAuthProcessing = true;
-
-        CookieManager.getInstance().flush();
-        AuthManager auth = AuthManager.getInstance(MainActivity.this);
-        auth.handleAuthCallback("https://puter.com/app");
-        auth.setLoggedIn(true);
-
-        String currentToken = auth.getAuthToken();
-        if (currentToken != null && !currentToken.trim().isEmpty()) {
-            LiveLogManager.getInstance().ok("PUTER_AUTH", "Authentication Verified", "Token active in AuthManager (length: " + currentToken.length() + ")");
-        } else {
-            LiveLogManager.getInstance().warn("PUTER_AUTH", "Login Finished Without Token", "Session marked logged-in, but token remains empty.");
-        }
-
-        runOnUiThread(() -> {
-            if (puterAuthDialog != null && puterAuthDialog.isShowing()) {
-                try {
-                    puterAuthDialog.dismiss();
-                } catch (Exception ignored) {}
-                puterAuthDialog = null;
-            }
-            refreshDropdownUI();
-            syncPuterTokenToHeadless(true);
-            Toast.makeText(MainActivity.this, "Puter Sign-In Successful!", Toast.LENGTH_SHORT).show();
-            if (isLiveMode) {
-                loadModels();
-            }
-        });
+    private void onDialogManagerAuthSuccess() {
+        refreshDropdownUI();
+        syncPuterTokenToHeadless(true);
+        if (isLiveMode) loadModels();
     }
 
     private void toggleModelSource() {
@@ -3276,67 +2049,13 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     protected void onDestroy() {
         super.onDestroy();
         stopTts();
-        if (textToSpeech != null) {
-            textToSpeech.shutdown();
-        }
-        if (speechRecognizer != null) {
-            speechRecognizer.destroy();
-        }
-        if (geminiService != null) {
-            geminiService.shutdown();
-        }
+        if (textToSpeech != null) textToSpeech.shutdown();
+        if (speechRecognizer != null) speechRecognizer.destroy();
+        if (geminiService != null) geminiService.shutdown();
         if (headlessAudioBridge != null) {
             headlessAudioBridge.stopCommentarySession();
             headlessAudioBridge.stopPuterChat();
         }
-        if (puterAuthDialog != null && puterAuthDialog.isShowing()) {
-            puterAuthDialog.dismiss();
-        }
-    }
-
-    private static class SessionHistoryAdapter extends RecyclerView.Adapter<SessionHistoryAdapter.ViewHolder> {
-        private final List<ChatSession> sessions;
-        private final OnSessionClickListener clickListener;
-        private final OnSessionDeleteListener deleteListener;
-
-        interface OnSessionClickListener { void onClick(ChatSession session); }
-        interface OnSessionDeleteListener { void onDelete(ChatSession session); }
-
-        SessionHistoryAdapter(List<ChatSession> sessions, OnSessionClickListener c, OnSessionDeleteListener d) {
-            this.sessions = sessions;
-            this.clickListener = c;
-            this.deleteListener = d;
-        }
-
-        @NonNull
-        @Override
-        public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_session_drawer_item, parent, false);
-            return new ViewHolder(v);
-        }
-
-        @Override
-        public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-            ChatSession s = sessions.get(position);
-            holder.tvTitle.setText(s.getTitle());
-            holder.itemView.setOnClickListener(v -> clickListener.onClick(s));
-            holder.btnDelete.setOnClickListener(v -> deleteListener.onDelete(s));
-        }
-
-        @Override
-        public int getItemCount() {
-            return sessions != null ? sessions.size() : 0;
-        }
-
-        static class ViewHolder extends RecyclerView.ViewHolder {
-            TextView tvTitle;
-            ImageView btnDelete;
-            ViewHolder(View v) {
-                super(v);
-                tvTitle = v.findViewById(R.id.tvSessionTitle);
-                btnDelete = v.findViewById(R.id.btnDeleteSession);
-            }
-        }
+        if (dialogManager != null) dialogManager.dismissAll();
     }
 }
-
