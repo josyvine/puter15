@@ -17,13 +17,19 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * Memory-safe Chat Session Manager.
+ * Handles session persistence, history retrieval, and automated purging
+ * of bloated legacy media payloads to prevent OutOfMemory crashes.
+ */
 public class ChatSessionManager {
     private static final String PREF_SESSIONS = "PuterChatSessions";
     private static final String KEY_SESSION_IDS = "session_ids_index";
     private static final String KEY_CURRENT_SESSION_ID = "current_session_id";
-    private static final int MAX_PERSISTED_BASE64_BYTES = 500 * 1024; // 500KB safety ceiling
-    private static ChatSessionManager instance;
+    private static final int MAX_PERSISTED_IMAGE_BASE64_CHARS = 100 * 1024; // 100KB ceiling for tiny image thumbnails only
+    private static final int MAX_SAFE_RAW_JSON_CHARS = 1500 * 1024; // 1.5MB legacy crash ceiling
 
+    private static ChatSessionManager instance;
     private final SharedPreferences prefs;
 
     private ChatSessionManager(Context context) {
@@ -116,16 +122,19 @@ public class ChatSessionManager {
                             if (file == null) continue;
                             JSONObject fj = new JSONObject();
                             fj.put("filename", file.getFilename());
-                            fj.put("mimeType", file.getMimeType());
+                            String mime = file.getMimeType() != null ? file.getMimeType() : "application/octet-stream";
+                            fj.put("mimeType", mime);
                             fj.put("fileSize", file.getSizeBytes());
                             fj.put("uri", file.getUri() != null ? file.getUri().toString() : "");
 
-                            // OOM Guard: Never persist huge Base64 data (videos or large files) into SharedPreferences
+                            // OOM Guard: NEVER persist video, audio, or large files as Base64 into SharedPreferences
                             String dataUri = file.getBase64DataUri();
-                            if (dataUri != null && dataUri.length() <= MAX_PERSISTED_BASE64_BYTES) {
+                            boolean isHeavyMedia = mime.startsWith("video/") || mime.startsWith("audio/") || mime.equals("application/pdf");
+
+                            if (!isHeavyMedia && dataUri != null && dataUri.length() <= MAX_PERSISTED_IMAGE_BASE64_CHARS) {
                                 fj.put("dataUri", dataUri);
                             } else {
-                                fj.put("dataUri", ""); // Omit giant base64 string to prevent OutOfMemoryError
+                                fj.put("dataUri", ""); // Strip heavy payload to keep JSON lightweight and crash-free
                             }
 
                             attArr.put(fj);
@@ -141,9 +150,8 @@ public class ChatSessionManager {
             prefs.edit().putString("sess_" + session.getId(), obj.toString()).apply();
             addSessionIdToIndex(session.getId());
         } catch (OutOfMemoryError oom) {
-            LiveLogManager.getInstance().error("SESSION_SAVE", "OOM in saveSession", "Session serialization exceeded heap limit. Session stripped to text only.");
+            LiveLogManager.getInstance().error("SESSION_SAVE", "OOM in saveSession", "Session serialization exceeded heap limit. Fallback text save triggered.");
             try {
-                // Emergency fallback: save session without attachments to avoid losing chat text
                 stripAttachmentsAndSaveEmergency(session);
             } catch (Exception ignored) {}
         } catch (Exception e) {
@@ -181,6 +189,14 @@ public class ChatSessionManager {
         if (sessionId == null) return null;
         String raw = prefs.getString("sess_" + sessionId, null);
         if (raw == null) return null;
+
+        // Auto-Purge: If a legacy session contains a 20MB+ video Base64 string, clean it immediately
+        if (raw.length() > MAX_SAFE_RAW_JSON_CHARS) {
+            LiveLogManager.getInstance().warn("SESSION_LOAD", "Bloated Session Purged", "Legacy session exceeded 1.5MB raw JSON. Cleaned to prevent OOM.");
+            prefs.edit().remove("sess_" + sessionId).apply();
+            return null;
+        }
+
         try {
             JSONObject obj = new JSONObject(raw);
             ChatSession session = new ChatSession(
@@ -189,7 +205,7 @@ public class ChatSessionManager {
                     obj.optLong("createdAt", System.currentTimeMillis())
             );
             session.setUpdatedAt(obj.optLong("updatedAt", session.getCreatedAt()));
-            session.setSelectedModelId(obj.optString("selectedModelId", "gemini-2.0-flash"));
+            session.setSelectedModelId(obj.optString("selectedModelId", "gemini-3.5-flash-lite"));
 
             if (obj.has("config")) {
                 JSONObject cfg = obj.getJSONObject("config");
@@ -246,6 +262,11 @@ public class ChatSessionManager {
                             String uriStr = fj.optString("uri", null);
                             long fsize = fj.optLong("fileSize", 0);
 
+                            // Clean legacy bloated dataUri
+                            if (dataUri != null && dataUri.length() > MAX_PERSISTED_IMAGE_BASE64_CHARS) {
+                                dataUri = "";
+                            }
+
                             Uri uri = (uriStr != null && !uriStr.isEmpty()) ? Uri.parse(uriStr) :
                                       (dataUri != null && !dataUri.isEmpty() ? Uri.parse(dataUri) : null);
 
@@ -261,7 +282,8 @@ public class ChatSessionManager {
             }
             return session;
         } catch (OutOfMemoryError oom) {
-            LiveLogManager.getInstance().error("SESSION_LOAD", "OOM in loadSession", "Failed to deserialize session payload.");
+            LiveLogManager.getInstance().error("SESSION_LOAD", "OOM in loadSession", "Failed to deserialize session payload. Purging corrupted entry.");
+            prefs.edit().remove("sess_" + sessionId).apply();
             return null;
         } catch (Exception e) {
             e.printStackTrace();
@@ -272,17 +294,29 @@ public class ChatSessionManager {
     public synchronized List<ChatSession> getAllSessions() {
         List<String> ids = getSessionIdsIndex();
         List<ChatSession> list = new ArrayList<>();
+        List<String> validIds = new ArrayList<>();
+
         for (String id : ids) {
-            ChatSession s = loadSession(id);
-            if (s != null) list.add(s);
+            try {
+                ChatSession s = loadSession(id);
+                if (s != null) {
+                    list.add(s);
+                    validIds.add(id);
+                }
+            } catch (Exception ignored) {}
         }
+
+        // Clean up invalid or purged IDs from the index
+        if (validIds.size() != ids.size()) {
+            saveSessionIdsIndex(validIds);
+        }
+
         Collections.sort(list, (a, b) -> Long.compare(b.getUpdatedAt(), a.getUpdatedAt()));
         return list;
     }
 
     public synchronized void deleteSession(String sessionId) {
         if (sessionId == null) return;
-        // Permanently erase session memory and messages from disk
         prefs.edit().remove("sess_" + sessionId).apply();
 
         List<String> ids = getSessionIdsIndex();
