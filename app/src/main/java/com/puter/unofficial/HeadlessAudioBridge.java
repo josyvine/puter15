@@ -141,6 +141,18 @@ public class HeadlessAudioBridge {
 
     // --- GEMINI LIVE COMMENTARY CONTROLS ---
 
+    /**
+     * Immediately instructs the headless WebView to stop and flush all WebAudio output.
+     * Prevents dual audio output during barge-in interruptions or session halts.
+     */
+    public void stopAllPlaybackAudio() {
+        mainHandler.post(() -> {
+            if (webView != null) {
+                webView.evaluateJavascript("if (typeof window.stopAllPlaybackAudio === 'function') { window.stopAllPlaybackAudio(); }", null);
+            }
+        });
+    }
+
     public void startCommentarySession(String scriptText, String personaPrompt) {
         mainHandler.post(() -> {
             isSessionActive = true;
@@ -175,6 +187,7 @@ public class HeadlessAudioBridge {
     public void stopCommentarySession() {
         mainHandler.post(() -> {
             isSessionActive = false;
+            stopAllPlaybackAudio();
             webView.evaluateJavascript("if (typeof window.stopCommentarySession === 'function') { window.stopCommentarySession(); }", null);
             dispatchDisconnected();
         });
@@ -348,6 +361,7 @@ public class HeadlessAudioBridge {
     public void dispatchSessionClosedWithTelemetry(int code, String reason, boolean wasClean) {
         mainHandler.post(() -> {
             isSessionActive = false;
+            stopAllPlaybackAudio();
             LiveLogManager.getInstance().info("GEMINI_LIVE_BRIDGE", "Session Closed", 
                     "Code: " + code + " | Reason: " + reason + " | Clean: " + wasClean);
             if (listener != null) {
@@ -365,6 +379,7 @@ public class HeadlessAudioBridge {
     public void dispatchError(String error) {
         mainHandler.post(() -> {
             isSessionActive = false;
+            stopAllPlaybackAudio();
             if (listener != null) listener.onError(error);
         });
     }
