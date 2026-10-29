@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/drawerRoot"
+    android:layout_width="320dp"
+    android:layout_height="match_parent"
+    android:layout_gravity="start"
+    android:background="@color/white"
+    android:clickable="true"
+    android:elevation="16dp"
+    android:focusable="true"
+    android:orientation="vertical">
+
+    <!-- Drawer Header / User Profile Widget -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/header_dark"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingTop="24dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="18dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Puter AI"
+            android:textColor="@color/white"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvDrawerAuthStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Status: Not Signed In"
+            android:textColor="#cccccc"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnDrawerAuthToggle"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginTop="10dp"
+            android:backgroundTint="@color/puter_blue"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="Sign In"
+            android:textColor="@color/white"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- Drawer Actions Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="6dp">
+
+        <Button
+            android:id="@+id/btnDrawerNewChat"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:backgroundTint="@color/puter_blue"
+            android:text="+ New Chat"
+            android:textColor="@color/white"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Search Sessions Bar -->
+    <EditText
+        android:id="@+id/etSearchSessions"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/edit_text_border"
+        android:hint="@string/search_sessions_hint"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:singleLine="true"
+        android:textColor="@color/text_dark"
+        android:textSize="13sp" />
+
+    <!-- Session History List (Constrained with smooth scrolling) -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvDrawerSessions"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:nestedScrollingEnabled="true"
+        android:overScrollMode="ifContentScrolls"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="8dp" />
+
+    <!-- Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/border_gray" />
+
+    <!-- Embedded Generation Usage Stats Card (Parity with index.html) -->
+    <LinearLayout
+        android:id="@+id/llDrawerUsageContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#f8f9fa"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GENERATION USAGE"
+            android:textColor="#1a73e8"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tvDrawerLastTokens"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Last: 0 tokens"
+                android:textColor="#555555"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/tvDrawerLastCost"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cost: $0.0000"
+                android:textColor="#555555"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tvDrawerGlobalTokens"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Global Total: 0 tokens"
+                android:textColor="#555555"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/tvDrawerGlobalCost"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Global Cost: $0.0000"
+                android:textColor="#555555"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/border_gray" />
+
+    <!-- Bottom Options Navigation -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+        <TextView
+            android:id="@+id/btnNavModelSettings"
+            android:layout_width="match_parent"
+            android:layout_height="38dp"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="⚙️ Generation Parameters"
+            android:textColor="@color/text_dark"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/btnNavBrowser"
+            android:layout_width="match_parent"
+            android:layout_height="38dp"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="🌐 Browse Website"
+            android:textColor="@color/text_dark"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/btnNavCryptoBot"
+            android:layout_width="match_parent"
+            android:layout_height="38dp"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="📈 Traders Zone (CryptoBot)"
+            android:textColor="@color/text_dark"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tvNostrBadge"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:ellipsize="middle"
+            android:singleLine="true"
+            android:text="Nostr: Connected"
+            android:textColor="@color/text_muted"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+</LinearLayout>
