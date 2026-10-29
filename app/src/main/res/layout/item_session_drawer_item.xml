@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/llSessionRowRoot"
+    android:layout_width="match_parent"
+    android:layout_height="48dp"
+    android:layout_marginBottom="2dp"
+    android:background="@drawable/bg_pill_badge"
+    android:backgroundTint="@color/white"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="12dp"
+    android:paddingEnd="8dp">
+
+    <!-- Chat Bubble Mini Icon -->
+    <ImageView
+        android:id="@+id/ivSessionIcon"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:src="@drawable/ic_history"
+        android:tint="@color/text_muted" />
+
+    <!-- Session Title and Time -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvSessionTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="Chat Session"
+            android:textColor="@color/text_dark"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tvSessionDate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Just now"
+            android:textColor="@color/text_muted"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <!-- Delete Session Icon -->
+    <ImageView
+        android:id="@+id/btnDeleteSession"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Delete session"
+        android:padding="6dp"
+        android:src="@drawable/ic_stop"
+        android:tint="@color/text_muted" />
+
+</LinearLayout>
