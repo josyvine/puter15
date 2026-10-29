@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
 
+import com.puter.unofficial.logging.LiveLogManager;
 import com.puter.unofficial.models.ChatMessage;
 import com.puter.unofficial.models.ChatSession;
 import com.puter.unofficial.models.GroundingSource;
@@ -20,6 +21,7 @@ public class ChatSessionManager {
     private static final String PREF_SESSIONS = "PuterChatSessions";
     private static final String KEY_SESSION_IDS = "session_ids_index";
     private static final String KEY_CURRENT_SESSION_ID = "current_session_id";
+    private static final int MAX_PERSISTED_BASE64_BYTES = 500 * 1024; // 500KB safety ceiling
     private static ChatSessionManager instance;
 
     private final SharedPreferences prefs;
@@ -107,7 +109,7 @@ public class ChatSessionManager {
                         mj.put("citations", gArr);
                     }
 
-                    // Save staged attachments for persistent multi-turn media context
+                    // Save staged attachments with strict memory safety guards
                     if (m.getAttachments() != null && !m.getAttachments().isEmpty()) {
                         JSONArray attArr = new JSONArray();
                         for (StagedFile file : m.getAttachments()) {
@@ -115,8 +117,17 @@ public class ChatSessionManager {
                             JSONObject fj = new JSONObject();
                             fj.put("filename", file.getFilename());
                             fj.put("mimeType", file.getMimeType());
-                            fj.put("dataUri", file.getBase64DataUri());
                             fj.put("fileSize", file.getSizeBytes());
+                            fj.put("uri", file.getUri() != null ? file.getUri().toString() : "");
+
+                            // OOM Guard: Never persist huge Base64 data (videos or large files) into SharedPreferences
+                            String dataUri = file.getBase64DataUri();
+                            if (dataUri != null && dataUri.length() <= MAX_PERSISTED_BASE64_BYTES) {
+                                fj.put("dataUri", dataUri);
+                            } else {
+                                fj.put("dataUri", ""); // Omit giant base64 string to prevent OutOfMemoryError
+                            }
+
                             attArr.put(fj);
                         }
                         mj.put("attachments", attArr);
@@ -129,9 +140,41 @@ public class ChatSessionManager {
 
             prefs.edit().putString("sess_" + session.getId(), obj.toString()).apply();
             addSessionIdToIndex(session.getId());
+        } catch (OutOfMemoryError oom) {
+            LiveLogManager.getInstance().error("SESSION_SAVE", "OOM in saveSession", "Session serialization exceeded heap limit. Session stripped to text only.");
+            try {
+                // Emergency fallback: save session without attachments to avoid losing chat text
+                stripAttachmentsAndSaveEmergency(session);
+            } catch (Exception ignored) {}
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private void stripAttachmentsAndSaveEmergency(ChatSession session) {
+        try {
+            JSONObject obj = new JSONObject();
+            obj.put("id", session.getId());
+            obj.put("title", session.getTitle());
+            obj.put("createdAt", session.getCreatedAt());
+            obj.put("updatedAt", session.getUpdatedAt());
+            obj.put("selectedModelId", session.getSelectedModelId());
+
+            JSONArray msgs = new JSONArray();
+            if (session.getMessages() != null) {
+                for (ChatMessage m : session.getMessages()) {
+                    if (m == null) continue;
+                    JSONObject mj = new JSONObject();
+                    mj.put("id", m.getId());
+                    mj.put("role", m.getRole());
+                    mj.put("text", m.getText() != null ? m.getText() : "");
+                    mj.put("timestamp", m.getTimestamp());
+                    msgs.put(mj);
+                }
+            }
+            obj.put("messages", msgs);
+            prefs.edit().putString("sess_" + session.getId(), obj.toString()).apply();
+        } catch (Exception ignored) {}
     }
 
     public synchronized ChatSession loadSession(String sessionId) {
@@ -200,9 +243,12 @@ public class ChatSessionManager {
                             String fname = fj.optString("filename", "attachment");
                             String mime = fj.optString("mimeType", "application/octet-stream");
                             String dataUri = fj.optString("dataUri", null);
+                            String uriStr = fj.optString("uri", null);
                             long fsize = fj.optLong("fileSize", 0);
 
-                            Uri uri = (dataUri != null) ? Uri.parse(dataUri) : null;
+                            Uri uri = (uriStr != null && !uriStr.isEmpty()) ? Uri.parse(uriStr) :
+                                      (dataUri != null && !dataUri.isEmpty() ? Uri.parse(dataUri) : null);
+
                             StagedFile sf = new StagedFile(uri, fname, mime, fsize, dataUri, null);
                             fileList.add(sf);
                         }
@@ -214,6 +260,9 @@ public class ChatSessionManager {
                 session.setMessages(list);
             }
             return session;
+        } catch (OutOfMemoryError oom) {
+            LiveLogManager.getInstance().error("SESSION_LOAD", "OOM in loadSession", "Failed to deserialize session payload.");
+            return null;
         } catch (Exception e) {
             e.printStackTrace();
             return null;
