@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Basic Colors -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    
+    <!-- Puter Branding Colors -->
+    <color name="puter_blue">#1a73e8</color>
+    <color name="puter_blue_dark">#1557b0</color>
+    <color name="puter_accent">#1a73e8</color>
+
+    <!-- Chat bubble & Timeline Colors matching index.html -->
+    <color name="chat_user_bubble">#007bff</color>
+    <color name="chat_user_bubble_text">#ffffff</color>
+    <color name="chat_assistant_bubble">#e5e5ea</color>
+    <color name="chat_assistant_bubble_text">#000000</color>
+    <color name="chat_system_bg">#f0f4f9</color>
+    <color name="chat_system_text">#5f6368</color>
+    
+    <!-- Code Blocks -->
+    <color name="code_bg">#1e1e1e</color>
+    <color name="code_header">#2d2d2d</color>
+    <color name="code_text">#d4d4d4</color>
+    
+    <!-- UI Surface Colors -->
+    <color name="background_light">#f7f7f7</color>
+    <color name="header_dark">#333333</color>
+    <color name="text_dark">#333333</color>
+    <color name="text_muted">#70757a</color>
+    <color name="border_gray">#dadce0</color>
+    <color name="stop_red">#ea4335</color>
+    <color name="citation_chip_bg">#f0f4f9</color>
+    <color name="citation_chip_text">#1a73e8</color>
+    <color name="drawer_bg">#ffffff</color>
+    <color name="drawer_header_bg">#333333</color>
+    <color name="active_item_bg">#e8f0fe</color>
+    <color name="voice_orb_color">#1a73e8</color>
+    <color name="voice_orb_glow">#4285f4</color>
+</resources>
