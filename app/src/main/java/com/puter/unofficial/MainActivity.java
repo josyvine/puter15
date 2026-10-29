@@ -712,6 +712,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
     public void onLiveSessionConnected() {
         runOnUiThread(() -> {
+            stopTts();
             isLiveVoiceConnected = true;
             lastRenderedUserText = "";
             lastUserTextTimestamp = 0;
@@ -933,6 +934,17 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         }
     }
 
+    /**
+     * Immediately silences the Text-To-Speech engine.
+     */
+    public void stopTts() {
+        if (textToSpeech != null) {
+            try {
+                textToSpeech.stop();
+            } catch (Exception ignored) {}
+        }
+    }
+
     private void setupResultLaunchers() {
         galleryLauncher = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
             if (uri != null) stageFileFromUri(uri);
@@ -987,6 +999,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
             @Override
             public void onDeleteMessage(ChatMessage message) {
+                stopTts();
                 chatAdapter.removeMessage(message);
                 if (currentSession != null) {
                     currentSession.getMessages().remove(message);
@@ -1199,6 +1212,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     private void setupContextMenuActions() {
         if (customContextMenuCard == null) return;
         ctxCancelGen.setOnClickListener(v -> {
+            stopTts();
             stopCurrentGeneration();
             customContextMenuCard.setVisibility(View.GONE);
         });
@@ -1211,6 +1225,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             customContextMenuCard.setVisibility(View.GONE);
         });
         ctxDeleteChat.setOnClickListener(v -> {
+            stopTts();
             if (contextTargetMessage != null) {
                 chatAdapter.removeMessage(contextTargetMessage);
                 if (currentSession != null) {
@@ -1238,6 +1253,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             customContextMenuCard.setVisibility(View.GONE);
         });
         ctxEndSession.setOnClickListener(v -> {
+            stopTts();
             createNewSession();
             customContextMenuCard.setVisibility(View.GONE);
         });
@@ -1924,6 +1940,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     }
 
     private void stopCurrentGeneration() {
+        stopTts();
         if (headlessAudioBridge != null) {
             headlessAudioBridge.stopPuterChat();
         }
@@ -1994,6 +2011,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     }
 
     private void createNewSession() {
+        stopTts();
         currentSession = sessionManager.createNewSession(activeModelId);
         activeModelId = currentSession.getSelectedModelId();
         selectedModelText.setText(activeModelId);
@@ -2003,6 +2021,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     }
 
     private void loadSessionIntoUI(ChatSession session) {
+        stopTts();
         sessionManager.setCurrentSessionId(session.getId());
         currentSession = session;
         activeModelId = session.getSelectedModelId();
@@ -2404,6 +2423,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     // --- LIVE VOICE AGENT ---
 
     private void launchLiveVoiceAgent() {
+        stopTts();
         if (isLiveVoiceConnected) {
             LiveLogManager.getInstance().info("GEMINI_LIVE", "User Terminated Live Session", "Closing active WebSocket session.");
             if (headlessAudioBridge != null) {
@@ -3247,10 +3267,16 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        stopTts();
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
+        stopTts();
         if (textToSpeech != null) {
-            textToSpeech.stop();
             textToSpeech.shutdown();
         }
         if (speechRecognizer != null) {
