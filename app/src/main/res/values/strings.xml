@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Application Branding -->
+    <string name="app_name">Puter Unofficial</string>
+    <string name="chat_input_hint">Type your message...</string>
+    <string name="generating_status">AI is answering...</string>
+    <string name="generating_image_status">AI is generating image...</string>
+    <string name="new_chat">New Chat</string>
+    <string name="model_selector_title">Select Model</string>
+
+    <!-- Navigation & Menu -->
+    <string name="menu_auth_signin">Sign In</string>
+    <string name="menu_auth_signout">Sign Out</string>
+    <string name="menu_custom_instruction">Custom Instruction</string>
+    <string name="menu_history">View History</string>
+    <string name="menu_new_session">New Session</string>
+    <string name="menu_help">Help</string>
+    <string name="menu_settings">Settings</string>
+    <string name="menu_live_models_toggle">Toggle Live Models</string>
+    <string name="menu_browse_website">Browse Website</string>
+    <string name="menu_traders_zone">Traders Zone</string>
+    <string name="menu_reply_language">Reply Language</string>
+    <string name="menu_enable_url_context">Enable URL Context</string>
+
+    <!-- Voice Agent UI -->
+    <string name="voice_agent_title">Gemini Live Voice</string>
+    <string name="voice_status_listening">Listening...</string>
+    <string name="voice_status_thinking">Thinking...</string>
+    <string name="voice_status_speaking">Speaking...</string>
+    <string name="voice_status_error">Error, tap to retry</string>
+    <string name="voice_transcript_hint">Live transcript will appear here...</string>
+    <string name="voice_hint">Tap mic to speak. Voice interrupts AI.</string>
+    <string name="voice_end_session">End Session</string>
+
+    <!-- Auth & Settings -->
+    <string name="auth_status_signed_in">Status: Signed In</string>
+    <string name="auth_status_signed_out">Status: Not Signed In</string>
+    <string name="settings_title">Generation &amp; Account Settings</string>
+    <string name="btn_save">Save</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_close">Close</string>
+    <string name="btn_copy">Copy</string>
+    <string name="btn_speak">Speak</string>
+    <string name="btn_regenerate">Regenerate</string>
+    <string name="btn_delete">Delete</string>
+    <string name="btn_preview">Preview</string>
+    <string name="btn_hide">Hide</string>
+    <string name="btn_reveal">Reveal</string>
+    <string name="btn_stop">Stop</string>
+
+    <!-- Sliders and Parameters -->
+    <string name="param_system_instructions">System Instructions</string>
+    <string name="param_temperature">Temperature</string>
+    <string name="param_top_p">Top P</string>
+    <string name="param_max_tokens">Max Output Tokens</string>
+    <string name="param_aspect_ratio">Aspect Ratio</string>
+
+    <!-- File Operations -->
+    <string name="upload_title">Upload Attachment</string>
+    <string name="upload_camera">Take Photo</string>
+    <string name="upload_gallery">Choose Image</string>
+    <string name="upload_file">Choose Document</string>
+    <string name="image_attached">File attached</string>
+    <string name="save_to_gallery">Save to Gallery</string>
+    <string name="share_image">Share Image</string>
+
+    <!-- Drawer and History -->
+    <string name="drawer_sessions_title">Chat History</string>
+    <string name="search_sessions_hint">Search sessions...</string>
+    <string name="delete_session_confirm">Delete this session?</string>
+    <string name="delete_session_msg">This will permanently delete the conversation history.</string>
+    <string name="nostr_identity_title">Nostr Identity</string>
+
+    <!-- Permissions -->
+    <string name="permission_required">Permissions required for Voice, Camera, and Audio features.</string>
+</resources>
