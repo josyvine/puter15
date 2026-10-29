@@ -614,7 +614,8 @@ public class AppDialogManager {
                 view.evaluateJavascript(openerPolyfillScript, null);
                 CookieManager.getInstance().flush();
 
-                extractTokensFromWebView(view, false);
+                // Do not auto-close or extract tokens while loading the authentication/account selector page.
+                // Only inspect and finalize if on an actual redirect/callback URL.
                 checkAuthRedirect(url, view);
             }
 
