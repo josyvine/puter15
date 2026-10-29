@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ecgLoaderContainer"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:padding="8dp"
+    android:visibility="gone">
+
+    <!-- Glowing Heartbeat Wave Icon -->
+    <ImageView
+        android:id="@+id/ivEcgPulse"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:src="@drawable/ic_sparkle_agent"
+        android:tint="@color/puter_blue" />
+
+    <!-- Generation Status Text -->
+    <TextView
+        android:id="@+id/tvEcgStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="12dp"
+        android:text="@string/generating_status"
+        android:textColor="@color/puter_blue"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <!-- Red Circular Stop Generation Button -->
+    <ImageButton
+        android:id="@+id/btnStopGeneration"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="@drawable/bg_pill_badge"
+        android:backgroundTint="@color/stop_red"
+        android:contentDescription="@string/btn_stop"
+        android:padding="6dp"
+        android:src="@drawable/ic_stop"
+        android:tint="@color/white" />
+
+</LinearLayout>
