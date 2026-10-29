@@ -544,17 +544,8 @@ public class AppDialogManager {
             @JavascriptInterface
             public void onAuthMessageReceived(String rawData) {
                 LiveLogManager.getInstance().ok("PUTER_AUTH", "PostMessage Captured", "Raw: " + rawData);
+                // User interacted and authorized on Puter.com; now safely extract and finalize
                 activity.runOnUiThread(() -> extractTokensFromWebView(popupWebView, true));
-            }
-
-            @JavascriptInterface
-            public void onTokenExtracted(String token) {
-                if (token != null && !token.trim().isEmpty()) {
-                    String clean = token.replace("\"", "").replace("'", "").trim();
-                    LiveLogManager.getInstance().ok("PUTER_AUTH", "Token via JS Bridge", "Token len: " + clean.length());
-                    AuthManager.getInstance(activity).saveAuthToken(clean);
-                    activity.runOnUiThread(() -> completePuterAuth());
-                }
             }
         }, "AndroidPuterAuthBridge");
 
@@ -566,6 +557,7 @@ public class AppDialogManager {
             }
         });
 
+        // Strict opener polyfill: Only passes user interaction messages; DOES NOT auto-extract or auto-dismiss
         final String openerPolyfillScript =
                 "javascript:(function() {" +
                 "  if (!window.opener) {" +
@@ -577,12 +569,6 @@ public class AppDialogManager {
                 "      }" +
                 "    };" +
                 "  }" +
-                "  try {" +
-                "    var token = localStorage.getItem('puter.auth.token') || (typeof puter !== 'undefined' && puter.authToken);" +
-                "    if (token && window.AndroidPuterAuthBridge) {" +
-                "      window.AndroidPuterAuthBridge.onTokenExtracted(token);" +
-                "    }" +
-                "  } catch(e) {}" +
                 "})()";
 
         popupWebView.setWebViewClient(new WebViewClient() {
@@ -614,8 +600,7 @@ public class AppDialogManager {
                 view.evaluateJavascript(openerPolyfillScript, null);
                 CookieManager.getInstance().flush();
 
-                // Do not auto-close or extract tokens while loading the authentication/account selector page.
-                // Only inspect and finalize if on an actual redirect/callback URL.
+                // Do not auto-dismiss or extract tokens during regular browsing of the account picker
                 checkAuthRedirect(url, view);
             }
 
