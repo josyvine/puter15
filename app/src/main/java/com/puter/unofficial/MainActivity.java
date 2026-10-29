@@ -785,55 +785,69 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     }
 
     private void stageFileFromUri(Uri uri) {
+        // Step 1: Query file metadata immediately on UI thread
+        long fileSize = 0;
         try {
-            // Check file size to avoid allocating excessive heap memory
-            long fileSize = 0;
-            try {
-                Cursor cursor = getContentResolver().query(uri, null, null, null, null);
-                if (cursor != null && cursor.moveToFirst()) {
-                    int sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE);
-                    if (sizeIndex != -1) fileSize = cursor.getLong(sizeIndex);
-                    cursor.close();
-                }
-            } catch (Exception ignored) {}
-
-            // Guard against large video/media files that exceed Gemini inline payload limit (20MB)
-            if (fileSize > 25 * 1024 * 1024) {
-                Toast.makeText(this, "File too large (max 20MB for direct inline analysis)", Toast.LENGTH_LONG).show();
-                LiveLogManager.getInstance().warn("ATTACHMENT", "File Skipped", "File exceeds 20MB inline limit: " + fileSize + " bytes");
-                return;
+            Cursor cursor = getContentResolver().query(uri, null, null, null, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                int sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE);
+                if (sizeIndex != -1) fileSize = cursor.getLong(sizeIndex);
+                cursor.close();
             }
+        } catch (Exception ignored) {}
 
-            String name = FileUtils.getFileName(this, uri);
-            String mime = FileUtils.getMimeType(this, uri);
-            String dataUri = FileUtils.fileToDataUri(this, uri);
-            Bitmap thumb = null;
+        // 25MB safety ceiling for inline payloads
+        if (fileSize > 25 * 1024 * 1024) {
+            Toast.makeText(this, "File too large (max 20MB for direct inline analysis)", Toast.LENGTH_LONG).show();
+            LiveLogManager.getInstance().warn("ATTACHMENT", "File Skipped", "File exceeds 25MB ceiling: " + fileSize + " bytes");
+            return;
+        }
 
+        final long finalFileSize = fileSize;
+        final String name = FileUtils.getFileName(this, uri);
+        final String mime = FileUtils.getMimeType(this, uri);
+
+        // Step 2: Extract frame thumbnail safely
+        Bitmap thumb = null;
+        try {
             if (mime != null) {
                 if (mime.startsWith("image/")) {
                     thumb = ImageUtils.getThumbnail(this, uri, 120);
                 } else if (mime.startsWith("video/")) {
-                    try {
-                        MediaMetadataRetriever mmr = new MediaMetadataRetriever();
-                        mmr.setDataSource(this, uri);
-                        thumb = mmr.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-                        mmr.release();
-                    } catch (Exception ignored) {}
+                    MediaMetadataRetriever mmr = new MediaMetadataRetriever();
+                    mmr.setDataSource(this, uri);
+                    thumb = mmr.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                    mmr.release();
                 }
             }
+        } catch (Exception ignored) {}
 
-            StagedFile file = new StagedFile(uri, name, mime, fileSize, dataUri, thumb);
-            stagedAttachmentsAdapter.addAttachment(file);
-            rvStagedAttachments.setVisibility(View.VISIBLE);
-            updateSendButtonState();
-            LiveLogManager.getInstance().ok("ATTACHMENT", "File Staged", "Name: " + name + " | Mime: " + mime + " | Size: " + fileSize);
-        } catch (OutOfMemoryError oom) {
-            LiveLogManager.getInstance().error("ATTACHMENT", "OOM Loading File", "File too large for heap allocation");
-            Toast.makeText(this, "Media file is too large for device memory", Toast.LENGTH_LONG).show();
-        } catch (Exception e) {
-            LiveLogManager.getInstance().error("ATTACHMENT", "Stage Exception", e.getMessage());
-            Toast.makeText(this, "Failed to attach: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-        }
+        final Bitmap finalThumb = thumb;
+
+        // Step 3: Run Base64 conversion on background worker thread to completely eliminate UI freezes and OOM crashes
+        new Thread(() -> {
+            try {
+                String dataUri = FileUtils.fileToDataUri(MainActivity.this, uri);
+                if (dataUri == null) {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Could not process media (memory limit)", Toast.LENGTH_SHORT).show());
+                    return;
+                }
+
+                runOnUiThread(() -> {
+                    StagedFile file = new StagedFile(uri, name, mime, finalFileSize, dataUri, finalThumb);
+                    stagedAttachmentsAdapter.addAttachment(file);
+                    rvStagedAttachments.setVisibility(View.VISIBLE);
+                    updateSendButtonState();
+                    LiveLogManager.getInstance().ok("ATTACHMENT", "File Staged Successfully", "Name: " + name + " | Mime: " + mime);
+                });
+            } catch (OutOfMemoryError oom) {
+                LiveLogManager.getInstance().error("ATTACHMENT", "OOM in staging thread", "File too large for heap allocation");
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Media file is too large for device memory", Toast.LENGTH_LONG).show());
+            } catch (Exception e) {
+                LiveLogManager.getInstance().error("ATTACHMENT", "Staging Thread Error", e.getMessage());
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Failed to attach: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        }).start();
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -1989,15 +2003,25 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     private void toggleAuthMirror() {
         boolean loggedIn = AuthManager.getInstance(this).isLoggedIn();
         if (loggedIn) {
-            LiveLogManager.getInstance().process("PUTER_AUTH", "User Triggered Sign Out", "Purging credentials and session cache.");
+            LiveLogManager.getInstance().process("PUTER_AUTH", "User Triggered Sign Out", "Purging credentials, cookies, and session cache.");
             AuthManager.getInstance(this).logout();
             lastInjectedPuterToken = null;
+
+            // Wipe Puter session cookies so opening Sign-In displays the clean account selector
+            try {
+                CookieManager cm = CookieManager.getInstance();
+                cm.setCookie("https://puter.com", "token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+                cm.setCookie("https://api.puter.com", "token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+                cm.setCookie("https://puter.com", "puter_auth=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+                cm.flush();
+            } catch (Exception ignored) {}
+
             refreshDropdownUI();
             Toast.makeText(this, "Signed Out", Toast.LENGTH_SHORT).show();
             if (headlessAudioWebView != null) {
                 headlessAudioWebView.evaluateJavascript("try { localStorage.removeItem('puter.auth.token'); } catch(e){}; if (typeof puter !== 'undefined') { puter.authToken = null; if (puter.auth) puter.auth.signOut(); }", null);
             }
-            LiveLogManager.getInstance().ok("PUTER_AUTH", "Sign Out Complete", "Puter token cleared.");
+            LiveLogManager.getInstance().ok("PUTER_AUTH", "Sign Out Complete", "Puter token and cookies cleared.");
         } else {
             LiveLogManager.getInstance().process("PUTER_AUTH", "Sign In Selected", "Launching OAuth Popup window.");
             dialogManager.openPuterAuthDialog();
