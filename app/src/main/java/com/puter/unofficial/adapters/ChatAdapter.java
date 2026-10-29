@@ -311,12 +311,33 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             });
 
             aHolder.btnDelete.setOnClickListener(v -> {
+                // Clear active speaking animations before notifying deletion listener
+                aHolder.orbitStar1.clearAnimation();
+                aHolder.orbitStar2.clearAnimation();
+                aHolder.orbitStar3.clearAnimation();
+                aHolder.orbitStar1.setVisibility(View.INVISIBLE);
+                aHolder.orbitStar2.setVisibility(View.INVISIBLE);
+                aHolder.orbitStar3.setVisibility(View.INVISIBLE);
                 if (actionListener != null) actionListener.onDeleteMessage(message);
             });
 
         } else if (holder instanceof SystemViewHolder) {
             SystemViewHolder sHolder = (SystemViewHolder) holder;
             sHolder.tvStatus.setText(message.getText());
+        }
+    }
+
+    @Override
+    public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
+        super.onViewRecycled(holder);
+        if (holder instanceof AssistantViewHolder) {
+            AssistantViewHolder aHolder = (AssistantViewHolder) holder;
+            aHolder.orbitStar1.clearAnimation();
+            aHolder.orbitStar2.clearAnimation();
+            aHolder.orbitStar3.clearAnimation();
+            aHolder.orbitStar1.setVisibility(View.INVISIBLE);
+            aHolder.orbitStar2.setVisibility(View.INVISIBLE);
+            aHolder.orbitStar3.setVisibility(View.INVISIBLE);
         }
     }
 
