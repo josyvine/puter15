@@ -13,7 +13,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ConnectionPool;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -21,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -44,7 +44,7 @@ public class UrlContextScraper {
 
     public UrlContextScraper() {
         this.fastScraperClient = new OkHttpClient.Builder()
-                .connectionPool(new okhttp3.ConnectionPool(30, 5, TimeUnit.MINUTES))
+                .connectionPool(new ConnectionPool(30, 5, TimeUnit.MINUTES))
                 .connectTimeout(8, TimeUnit.SECONDS)
                 .readTimeout(10, TimeUnit.SECONDS)
                 .followRedirects(true)
