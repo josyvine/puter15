@@ -19,6 +19,7 @@ import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -34,6 +35,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.webkit.WebViewAssetLoader;
 
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
@@ -63,6 +65,7 @@ public class AppDialogManager {
     private final Runnable onAuthSuccessCallback;
 
     private Dialog activeAuthDialog;
+    private Dialog activePortalDialog;
     private BottomSheetDialog activeBottomSheet;
     private boolean isPuterAuthProcessing = false;
 
@@ -398,13 +401,65 @@ public class AppDialogManager {
 
     // --- BROWSER & CRYPTO BOT OVERLAYS ---
 
-    @SuppressLint("SetJavaScriptEnabled")
     public void showBrowserDialog() {
+        showBrowserDialog(null);
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    public void showBrowserDialog(WebAppInterface webAppInterface) {
         BottomSheetDialog dialog = new BottomSheetDialog(activity, R.style.BottomSheetDialogTheme);
         activeBottomSheet = dialog;
+        activePortalDialog = dialog;
+
         View sheet = LayoutInflater.from(activity).inflate(R.layout.dialog_code_preview_fullscreen, null);
         WebView wv = sheet.findViewById(R.id.wvCodePreview);
-        wv.getSettings().setJavaScriptEnabled(true);
+
+        WebSettings ws = wv.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setDatabaseEnabled(true);
+        ws.setAllowFileAccess(true);
+        ws.setAllowContentAccess(true);
+
+        if (webAppInterface != null) {
+            wv.addJavascriptInterface(webAppInterface, "AndroidInterface");
+        }
+
+        WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(activity))
+                .build();
+
+        wv.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if (request != null && request.getUrl() != null) {
+                    return assetLoader.shouldInterceptRequest(request.getUrl());
+                }
+                return super.shouldInterceptRequest(view, request);
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (request != null && request.getUrl() != null) {
+                    String url = request.getUrl().toString();
+                    if (url.contains("index.html")) {
+                        activity.runOnUiThread(dialog::dismiss);
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                if (url != null && url.contains("index.html")) {
+                    activity.runOnUiThread(dialog::dismiss);
+                    return true;
+                }
+                return false;
+            }
+        });
+
         wv.loadUrl(AppConstants.LOCAL_BROWSER_URL);
         sheet.findViewById(R.id.btnCloseCodePreview).setOnClickListener(v -> dialog.dismiss());
         sheet.findViewById(R.id.btnReloadCodePreview).setOnClickListener(v -> wv.reload());
@@ -412,18 +467,87 @@ public class AppDialogManager {
         dialog.show();
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     public void showCryptoBotDialog() {
+        showCryptoBotDialog(null);
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    public void showCryptoBotDialog(WebAppInterface webAppInterface) {
         BottomSheetDialog dialog = new BottomSheetDialog(activity, R.style.BottomSheetDialogTheme);
         activeBottomSheet = dialog;
+        activePortalDialog = dialog;
+
         View sheet = LayoutInflater.from(activity).inflate(R.layout.dialog_code_preview_fullscreen, null);
         WebView wv = sheet.findViewById(R.id.wvCodePreview);
-        wv.getSettings().setJavaScriptEnabled(true);
+
+        WebSettings ws = wv.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setDatabaseEnabled(true);
+        ws.setAllowFileAccess(true);
+        ws.setAllowContentAccess(true);
+
+        if (webAppInterface != null) {
+            wv.addJavascriptInterface(webAppInterface, "AndroidInterface");
+        }
+
+        WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(activity))
+                .build();
+
+        wv.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if (request != null && request.getUrl() != null) {
+                    return assetLoader.shouldInterceptRequest(request.getUrl());
+                }
+                return super.shouldInterceptRequest(view, request);
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (request != null && request.getUrl() != null) {
+                    String url = request.getUrl().toString();
+                    if (url.contains("index.html")) {
+                        activity.runOnUiThread(dialog::dismiss);
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                if (url != null && url.contains("index.html")) {
+                    activity.runOnUiThread(dialog::dismiss);
+                    return true;
+                }
+                return false;
+            }
+        });
+
         wv.loadUrl(AppConstants.LOCAL_BOT_URL);
         sheet.findViewById(R.id.btnCloseCodePreview).setOnClickListener(v -> dialog.dismiss());
         sheet.findViewById(R.id.btnReloadCodePreview).setOnClickListener(v -> wv.reload());
         dialog.setContentView(sheet);
         dialog.show();
+    }
+
+    public void dismissPortalDialog() {
+        activity.runOnUiThread(() -> {
+            if (activePortalDialog != null && activePortalDialog.isShowing()) {
+                try {
+                    activePortalDialog.dismiss();
+                } catch (Exception ignored) {}
+                activePortalDialog = null;
+            }
+            if (activeBottomSheet != null && activeBottomSheet.isShowing()) {
+                try {
+                    activeBottomSheet.dismiss();
+                } catch (Exception ignored) {}
+                activeBottomSheet = null;
+            }
+        });
     }
 
     // --- FULLSCREEN PREVIEWERS ---
@@ -544,7 +668,6 @@ public class AppDialogManager {
             @JavascriptInterface
             public void onAuthMessageReceived(String rawData) {
                 LiveLogManager.getInstance().ok("PUTER_AUTH", "PostMessage Captured", "Raw: " + rawData);
-                // User interacted and authorized on Puter.com; now safely extract and finalize
                 activity.runOnUiThread(() -> extractTokensFromWebView(popupWebView, true));
             }
         }, "AndroidPuterAuthBridge");
@@ -557,7 +680,6 @@ public class AppDialogManager {
             }
         });
 
-        // Strict opener polyfill: Only passes user interaction messages; DOES NOT auto-extract or auto-dismiss
         final String openerPolyfillScript =
                 "javascript:(function() {" +
                 "  if (!window.opener) {" +
@@ -600,7 +722,6 @@ public class AppDialogManager {
                 view.evaluateJavascript(openerPolyfillScript, null);
                 CookieManager.getInstance().flush();
 
-                // Do not auto-dismiss or extract tokens during regular browsing of the account picker
                 checkAuthRedirect(url, view);
             }
 
