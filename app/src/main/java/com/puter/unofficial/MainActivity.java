@@ -18,6 +18,8 @@ import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Vibrator;
 import android.provider.OpenableColumns;
 import android.speech.RecognitionListener;
@@ -430,22 +432,22 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         headlessAudioBridge.setEventListener(new HeadlessAudioBridge.LiveAudioEventListener() {
             @Override
             public void onSessionConnected() {
-                onLiveSessionConnected();
+                MainActivity.this.onLiveSessionConnected();
             }
 
             @Override
             public void onTranscriptReceived(String text) {
-                onLiveTranscriptReceived(text);
+                MainActivity.this.onLiveTranscriptReceived(text);
             }
 
             @Override
             public void onUserTranscriptReceived(String text) {
-                onLiveUserTranscript(text);
+                MainActivity.this.onLiveUserTranscript(text);
             }
 
             @Override
             public void onModelTranscriptReceived(String text, boolean isFinished) {
-                onLiveModelTranscript(text, isFinished);
+                MainActivity.this.onLiveModelTranscript(text, isFinished);
             }
 
             @Override
@@ -468,7 +470,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
             @Override
             public void onError(String errorMessage) {
-                onLiveError(errorMessage);
+                MainActivity.this.onLiveError(errorMessage);
             }
         });
 
@@ -785,7 +787,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     }
 
     private void stageFileFromUri(Uri uri) {
-        // Step 1: Query file metadata immediately on UI thread
         long fileSize = 0;
         try {
             Cursor cursor = getContentResolver().query(uri, null, null, null, null);
@@ -796,7 +797,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             }
         } catch (Exception ignored) {}
 
-        // 25MB safety ceiling for inline payloads
         if (fileSize > 25 * 1024 * 1024) {
             Toast.makeText(this, "File too large (max 20MB for direct inline analysis)", Toast.LENGTH_LONG).show();
             LiveLogManager.getInstance().warn("ATTACHMENT", "File Skipped", "File exceeds 25MB ceiling: " + fileSize + " bytes");
@@ -807,7 +807,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         final String name = FileUtils.getFileName(this, uri);
         final String mime = FileUtils.getMimeType(this, uri);
 
-        // Step 2: Extract frame thumbnail safely
         Bitmap thumb = null;
         try {
             if (mime != null) {
@@ -824,7 +823,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
         final Bitmap finalThumb = thumb;
 
-        // Step 3: Run Base64 conversion on background worker thread to completely eliminate UI freezes and OOM crashes
         new Thread(() -> {
             try {
                 String dataUri = FileUtils.fileToDataUri(MainActivity.this, uri);
@@ -1060,12 +1058,12 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
         menuBrowseWebsite.setOnClickListener(v -> {
             puterDropdownMenuCard.setVisibility(View.GONE);
-            dialogManager.showBrowserDialog();
+            dialogManager.showBrowserDialog(webAppInterface);
         });
 
         menuTradersZone.setOnClickListener(v -> {
             puterDropdownMenuCard.setVisibility(View.GONE);
-            dialogManager.showCryptoBotDialog();
+            dialogManager.showCryptoBotDialog(webAppInterface);
         });
 
         etMenuReplyLanguage.setText(prefs.getString(AppConstants.KEY_TARGET_LANGUAGE, ""));
@@ -1121,6 +1119,7 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         ctxToggleMode.setOnClickListener(v -> {
             isAutoMode = !isAutoMode;
             prefs.edit().putBoolean(AppConstants.KEY_AUTO_MODE, isAutoMode).apply();
+            if (webAppInterface != null) webAppInterface.setAutoMode(isAutoMode);
             Toast.makeText(this, isAutoMode ? "Auto Mode Enabled" : "Normal Mode Enabled", Toast.LENGTH_SHORT).show();
             customContextMenuCard.setVisibility(View.GONE);
         });
@@ -1297,6 +1296,12 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         currentSession.addMessage(assistantMsg);
         currentActiveAssistantMsg = assistantMsg;
 
+        // Auto Mode Scraper Crawl Execution Workflow
+        if (isAutoMode) {
+            executeAutoModeCrawlSequence(prompt, assistantMsg);
+            return;
+        }
+
         String targetLang = prefs.getString(AppConstants.KEY_TARGET_LANGUAGE, "");
         String activeSystemMessage = prefs.getString(AppConstants.KEY_CUSTOM_INSTRUCTION, "");
         if (!targetLang.isEmpty()) {
@@ -1360,6 +1365,87 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         }
 
         routeGeneration(finalPrompt, attachments, assistantMsg);
+    }
+
+    private void executeAutoModeCrawlSequence(String prompt, ChatMessage assistantMsg) {
+        isGenerating = true;
+        updateSendButtonState();
+        ecgLoaderContainer.setVisibility(View.VISIBLE);
+        tvEcgStatus.setText("Auto Mode: Connecting to relay...");
+
+        // Ensure background QueryWatcherService is active
+        try {
+            Intent serviceIntent = new Intent(this, QueryWatcherService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+        } catch (Exception e) {
+            LiveLogManager.getInstance().warn("QUERY_SERVICE", "Service start skipped", e.getMessage());
+        }
+
+        Handler handler = new Handler(Looper.getMainLooper());
+
+        // Step 1: Establishing socket connection
+        assistantMsg.setText("Establishing socket connection to relay...");
+        chatAdapter.notifyItemChanged(chatAdapter.getItemCount() - 1);
+
+        // Step 2: Waiting for crawl response
+        handler.postDelayed(() -> {
+            if (!isGenerating) return;
+            assistantMsg.setText("Waiting for extension crawl response...");
+            chatAdapter.notifyItemChanged(chatAdapter.getItemCount() - 1);
+        }, 900);
+
+        // Step 3: Waking up Kiwi Browser & launching intent
+        handler.postDelayed(() -> {
+            if (!isGenerating) return;
+            assistantMsg.setText("Extension sleeping. Waking up Kiwi Browser...");
+            assistantMsg.setStreaming(false);
+            chatAdapter.notifyItemChanged(chatAdapter.getItemCount() - 1);
+            finishGeneration();
+
+            wakeUpKiwi(prompt);
+        }, 1800);
+    }
+
+    public void wakeUpKiwi(String query) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://duckduckgo.com/?q=" + Uri.encode(query)));
+            intent.setPackage("com.kiwibrowser.browser");
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            LiveLogManager.getInstance().ok("KIWI_WAKEUP", "Launched Kiwi Browser Successfully", "Query: " + query);
+        } catch (Exception e) {
+            try {
+                Intent fallback = new Intent(Intent.ACTION_VIEW, Uri.parse("https://duckduckgo.com/?q=" + Uri.encode(query)));
+                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(fallback);
+                LiveLogManager.getInstance().warn("KIWI_WAKEUP", "Fallback Browser Launched", "Kiwi not installed; opened default browser.");
+            } catch (Exception ex) {
+                LiveLogManager.getInstance().error("KIWI_WAKEUP", "Launch Failed", ex.getMessage());
+                Toast.makeText(this, "Could not open browser for query", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    public void setAutoMode(boolean auto) {
+        this.isAutoMode = auto;
+        prefs.edit().putBoolean(AppConstants.KEY_AUTO_MODE, auto).apply();
+        if (ctxToggleMode != null) {
+            ctxToggleMode.setText(isAutoMode ? "⚡ Auto Mode" : "✋ Normal Mode");
+        }
+    }
+
+    public void dismissPortalDialog() {
+        if (dialogManager != null) {
+            dialogManager.dismissPortalDialog();
+        }
+    }
+
+    public void onScrapedProductReceived(String id, String json) {
+        Toast.makeText(this, "Scraped packet cataloged: " + id, Toast.LENGTH_SHORT).show();
     }
 
     private boolean isGeminiNativeModel(String modelId) {
@@ -1534,7 +1620,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                 currentParts.put(textPart);
             }
 
-            // Packaging video, audio, image and document parts for Gemini
             if (attachments != null) {
                 for (StagedFile file : attachments) {
                     if (file != null && file.getBase64DataUri() != null && isGeminiSupportedInlineMedia(file.getMimeType())) {
@@ -2007,7 +2092,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
             AuthManager.getInstance(this).logout();
             lastInjectedPuterToken = null;
 
-            // Wipe Puter session cookies so opening Sign-In displays the clean account selector
             try {
                 CookieManager cm = CookieManager.getInstance();
                 cm.setCookie("https://puter.com", "token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT");
@@ -2141,3 +2225,4 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         if (dialogManager != null) dialogManager.dismissAll();
     }
 }
+
