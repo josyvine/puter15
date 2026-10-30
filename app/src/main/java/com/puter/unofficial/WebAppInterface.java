@@ -68,6 +68,21 @@ public class WebAppInterface {
         closeBrowserPortal();
     }
 
+    @JavascriptInterface
+    public void loadLocalUrl(String url) {
+        if (url == null || url.contains("index.html")) {
+            closeBrowserPortal();
+        } else if (mainActivity != null) {
+            mainActivity.runOnUiThread(() -> {
+                if (url.contains("bot.html")) {
+                    mainActivity.openTradersZone();
+                } else if (url.contains("browser.html")) {
+                    mainActivity.openBrowserWebsite();
+                }
+            });
+        }
+    }
+
     // --- OPERATIONAL MODE SYNCHRONIZATION (MANUAL / AUTO) ---
 
     @JavascriptInterface
@@ -146,8 +161,18 @@ public class WebAppInterface {
     // --- DIAGNOSTICS & LOGGING BRIDGES ---
 
     @JavascriptInterface
+    public void nativeLog(String message) {
+        nativeLog(message, "BROWSER_PORTAL");
+    }
+
+    @JavascriptInterface
     public void nativeLog(String message, String tag) {
         logger.info(tag != null ? tag : "BROWSER_PORTAL", "Portal Log", message);
+    }
+
+    @JavascriptInterface
+    public void logHtmlGlitch(String details) {
+        logHtmlGlitch("HTML_GLITCH", details);
     }
 
     @JavascriptInterface
@@ -156,8 +181,18 @@ public class WebAppInterface {
     }
 
     @JavascriptInterface
+    public void reportGlitchedLogic(String details) {
+        reportGlitchedLogic("LOGIC_GLITCH", details);
+    }
+
+    @JavascriptInterface
     public void reportGlitchedLogic(String tag, String details) {
         logger.error(tag != null ? tag : "LOGIC_GLITCH", "Logic Glitch Report", details);
+    }
+
+    @JavascriptInterface
+    public void logTechnicalEvent(String message) {
+        logTechnicalEvent("INFO", "BROWSER_PORTAL", "Console Log", message);
     }
 
     @JavascriptInterface
@@ -170,6 +205,16 @@ public class WebAppInterface {
         } catch (Exception ignored) {}
 
         logger.log(level, tag != null ? tag : "JS_BRIDGE", title, details);
+    }
+
+    @JavascriptInterface
+    public void logDiagnostic(String msg) {
+        logDiagnostic(msg, "DIAGNOSTIC");
+    }
+
+    @JavascriptInterface
+    public void logDiagnostic(String msg, String tag) {
+        logger.info(tag != null ? tag : "DIAGNOSTIC", msg, "");
     }
 
     // --- CONFIGURATION RETRIEVAL METHODS ---
@@ -394,11 +439,6 @@ public class WebAppInterface {
         if (audioBridge != null) {
             audioBridge.dispatchTargetCoordinates(targetId, left, top, right, bottom);
         }
-    }
-
-    @JavascriptInterface
-    public void logDiagnostic(String msg, String tag) {
-        logger.info(tag != null ? tag : "DIAGNOSTIC", msg, "");
     }
 
     @JavascriptInterface
