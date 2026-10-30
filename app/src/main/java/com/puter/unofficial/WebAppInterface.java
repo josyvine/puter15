@@ -19,13 +19,15 @@ import android.widget.Toast;
 import com.puter.unofficial.logging.LiveLogManager;
 import com.puter.unofficial.logging.LogEntry;
 
+import org.json.JSONObject;
+
 import java.io.OutputStream;
 
 /**
- * JavaScript interface bridge bound to headless_live_audio.html.
+ * JavaScript interface bridge bound to headless_live_audio.html, browser.html, and bot.html.
  * Handles Gemini Live Bidi WebSockets, Puter SDK authentication synchronization,
  * live audio streams, transcripts, vision tool events, official Puter.js
- * client-side chat streaming, model listing, and deep telemetry logging.
+ * client-side chat streaming, model listing, Nostr relay handshakes, and deep telemetry logging.
  */
 public class WebAppInterface {
 
@@ -52,7 +54,111 @@ public class WebAppInterface {
         this.mainActivity = activity;
     }
 
-    // --- SYSTEM LOG CONSOLE TELEMETRY BRIDGE ---
+    // --- PORTAL DISMISSAL & NAVIGATION BRIDGE ---
+
+    @JavascriptInterface
+    public void closeBrowserPortal() {
+        if (mainActivity != null) {
+            mainActivity.runOnUiThread(() -> mainActivity.dismissPortalDialog());
+        }
+    }
+
+    @JavascriptInterface
+    public void finishActivity() {
+        closeBrowserPortal();
+    }
+
+    // --- OPERATIONAL MODE SYNCHRONIZATION (MANUAL / AUTO) ---
+
+    @JavascriptInterface
+    public void setAutoMode(boolean isAuto) {
+        prefs.edit()
+                .putBoolean("pref_auto_mode", isAuto)
+                .putString("operational_mode", isAuto ? "AUTO" : "MANUAL")
+                .apply();
+        logger.info("OPERATIONAL_MODE", "Auto Mode Toggled", "isAuto: " + isAuto);
+        if (mainActivity != null) {
+            mainActivity.runOnUiThread(() -> mainActivity.setAutoMode(isAuto));
+        }
+    }
+
+    @JavascriptInterface
+    public boolean getAutoMode() {
+        return prefs.getBoolean("pref_auto_mode", "AUTO".equalsIgnoreCase(prefs.getString("operational_mode", "MANUAL")));
+    }
+
+    @JavascriptInterface
+    public void setOperationalMode(String mode) {
+        boolean isAuto = "AUTO".equalsIgnoreCase(mode);
+        setAutoMode(isAuto);
+    }
+
+    @JavascriptInterface
+    public String getOperationalMode() {
+        return getAutoMode() ? "AUTO" : "MANUAL";
+    }
+
+    // --- NOSTR HANDSHAKE & SCRAPER BRIDGE ---
+
+    @JavascriptInterface
+    public String getNostrSettings() {
+        JSONObject obj = new JSONObject();
+        try {
+            String defaultNpub = prefs.getString(AppConstants.KEY_NOSTR_PUBLIC_KEY, "");
+            String pubKey = prefs.getString("nostr_extension_pubkey", defaultNpub);
+            String relayUrl = prefs.getString("nostr_relay_url", "wss://relay.damus.io");
+
+            obj.put("public_key", pubKey);
+            obj.put("relay_url", relayUrl);
+        } catch (Exception e) {
+            logger.error("NOSTR_BRIDGE", "Settings JSON Error", e.getMessage());
+        }
+        return obj.toString();
+    }
+
+    @JavascriptInterface
+    public void saveNostrSettings(String pubKey, String relayUrl) {
+        prefs.edit()
+                .putString("nostr_extension_pubkey", pubKey != null ? pubKey.trim() : "")
+                .putString("nostr_relay_url", (relayUrl != null && !relayUrl.trim().isEmpty()) ? relayUrl.trim() : "wss://relay.damus.io")
+                .apply();
+        logger.ok("NOSTR_BRIDGE", "Settings Saved", "Relay: " + relayUrl);
+    }
+
+    @JavascriptInterface
+    public void addScrapedProduct(String id, String json) {
+        if (id == null || json == null) return;
+        prefs.edit().putString("scraped_product_" + id, json).apply();
+        logger.ok("SCRAPER", "Product Saved to Catalog", "ID: " + id);
+        if (mainActivity != null) {
+            mainActivity.runOnUiThread(() -> mainActivity.onScrapedProductReceived(id, json));
+        }
+    }
+
+    @JavascriptInterface
+    public void wakeUpKiwi(String query) {
+        logger.info("KIWI_WAKEUP", "Wake-up Request from Bridge", "Query: " + query);
+        if (mainActivity != null) {
+            mainActivity.runOnUiThread(() -> mainActivity.wakeUpKiwi(query));
+        }
+    }
+
+    // --- DIAGNOSTICS & LOGGING BRIDGES ---
+
+    @JavascriptInterface
+    public void nativeLog(String message, String tag) {
+        logger.info(tag != null ? tag : "BROWSER_PORTAL", "Portal Log", message);
+    }
+
+    @JavascriptInterface
+    public void logHtmlGlitch(String tag, String details) {
+        logger.warn(tag != null ? tag : "HTML_GLITCH", "Portal Glitch", details);
+    }
+
+    @JavascriptInterface
+    public void reportGlitchedLogic(String tag, String details) {
+        logger.error(tag != null ? tag : "LOGIC_GLITCH", "Logic Glitch Report", details);
+    }
 
     @JavascriptInterface
     public void logTechnicalEvent(String levelStr, String tag, String title, String details) {
@@ -220,10 +326,6 @@ public class WebAppInterface {
         }
     }
 
-    /**
-     * Bridges transcribed user speech to display on the right as a blue chat bubble.
-     * Single-dispatch via audioBridge ensures exactly one invocation.
-     */
     @JavascriptInterface
     public void onLiveUserTranscript(String text) {
         if (text == null || text.trim().isEmpty()) {
@@ -240,10 +342,6 @@ public class WebAppInterface {
         }
     }
 
-    /**
-     * Bridges clean model spoken words to display on the left as an assistant chat bubble.
-     * Single-dispatch via audioBridge ensures exactly one invocation.
-     */
     @JavascriptInterface
     public void onLiveModelTranscript(String text, boolean isTurnFinished) {
         if (text != null && !text.trim().isEmpty()) {
