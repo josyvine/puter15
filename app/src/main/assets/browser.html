@@ -27,7 +27,6 @@
       padding-bottom: 40px;
     }
 
-    /* Slick top header bar matching Puter Unofficial theme */
     header {
       position: fixed;
       top: 0;
@@ -62,7 +61,6 @@
       background-color: #b52218;
     }
 
-    /* Standard scraper action button matching the native app styles */
     .scraper-btn {
       color: #f4f4f4;
       background-color: #1a73e8;
@@ -87,7 +85,6 @@
       color: #fff;
     }
 
-    /* Centralized Search and Exploration Container */
     .portal-container {
       width: 90%;
       max-width: 500px;
@@ -151,9 +148,6 @@
       font-size: 28px;
     }
 
-    /* =========================================================================
-     * NEW: OPERATIONAL MODE SELECTOR CARD STYLING
-     * ========================================================================= */
     .mode-card {
       width: 90%;
       max-width: 500px;
@@ -212,9 +206,6 @@
       opacity: 0.8;
     }
 
-    /* =========================================================================
-     * NOSTR HANDSHAKE SETTINGS CARD (ELEGANT INTEGRATION)
-     * ========================================================================= */
     .settings-card {
       width: 90%;
       max-width: 500px;
@@ -290,9 +281,6 @@
       background-color: #d93025;
     }
 
-    /* =========================================================================
-     * DECENTRALIZED RECEIVER INBOX (TINY BOX) PANEL
-     * ========================================================================= */
     .inbox-container {
       width: 90%;
       max-width: 500px;
@@ -330,7 +318,6 @@
       padding-right: 5px;
     }
 
-    /* Style for the visual dynamic card (Tiny Box) */
     .tiny-box {
       background: #f8f9fa;
       border: 1px solid #e2e8f0;
@@ -395,17 +382,14 @@
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #d93025; /* RED indicating offline by default */
+      background: #d93025;
       transition: background 0.3s;
     }
 
     .status-dot.connected {
-      background: #27ae60; /* GREEN when socket is fully open */
+      background: #27ae60;
     }
 
-    /* =========================================================================
-     * NEW: DIAGNOSTIC CONSOLE LOG CARD STYLING
-     * ========================================================================= */
     .console-card {
       width: 90%;
       max-width: 500px;
@@ -462,7 +446,6 @@
 </head>
 <body>
 
-  <!-- Local Start Header -->
   <header>
     <button class="exit-btn" onclick="exitBrowser()" title="Exit to Chat">
       <span class="material-symbols-outlined" style="font-size: 20px;">logout</span>
@@ -473,13 +456,11 @@
     </button>
   </header>
 
-  <!-- Central Landing Area -->
   <div class="portal-container">
     <span class="material-symbols-outlined portal-logo">travel_explore</span>
     <div class="portal-title">Explore Web Content</div>
     <div class="portal-desc">Enter an address or type a query to browse, summarize, and catalog target web documents.</div>
 
-    <!-- Central Search Input Box -->
     <div class="search-wrapper">
       <input type="text" id="portalAddressInput" placeholder="Enter web address or search query..." onkeydown="handlePortalKey(event)">
       <button class="search-btn" onclick="navigatePortalAddress()">
@@ -488,7 +469,6 @@
     </div>
   </div>
 
-  <!-- Operational Mode Selector Card -->
   <div class="mode-card">
     <div class="mode-header">Operational Mode Selector</div>
     <div class="mode-buttons">
@@ -501,7 +481,6 @@
     </div>
   </div>
 
-  <!-- Nostr Handshake Settings Card -->
   <div class="settings-card">
     <div class="settings-header">Nostr Handshake Settings</div>
     <div class="form-group">
@@ -523,7 +502,6 @@
     </button>
   </div>
 
-  <!-- Real-Time Decentralized Scraper Receiver Inbox -->
   <div class="inbox-container">
     <div class="inbox-header">
       <span>Scraper Inbox</span>
@@ -537,7 +515,6 @@
     </div>
   </div>
 
-  <!-- Diagnostic Console Log Card -->
   <div class="console-card">
     <div class="console-header">
       <span>Diagnostic Console</span>
@@ -547,15 +524,12 @@
   </div>
 
   <script>
-    // =========================================================================
-    // ADVANCED CONSOLE LOGGER LOGIC
-    // =========================================================================
     function addConsoleLog(message, type = "info") {
         const consoleBody = document.getElementById("consoleBody");
         if (!consoleBody) return;
 
         const now = new Date();
-        const timestamp = now.toTimeString().split(' ')[0]; // Returns formatted HH:MM:SS string
+        const timestamp = now.toTimeString().split(' ')[0];
         let prefix = `[${timestamp}] `;
 
         if (type === "error") {
@@ -588,7 +562,6 @@
         consoleBody.appendChild(logLine);
         consoleBody.scrollTop = consoleBody.scrollHeight;
 
-        // Forward back to Android system log as well
         if (window.AndroidInterface && window.AndroidInterface.logTechnicalEvent) {
             window.AndroidInterface.logTechnicalEvent("browser_console: " + message);
         }
@@ -602,12 +575,10 @@
         }
     }
 
-    // Expose global callback on window scope for Android WebView evaluateJavascript injections
     window.addNativeLogToConsole = function(msg, type) {
         addConsoleLog(msg, type);
     };
 
-    // --- TOTAL SURVEILLANCE: GLOBAL EXCEPTION INTERCEPTORS ---
     window.onerror = function(message, source, lineno, colno, error) {
         const glitchDetails = "Global Exception: " + message + " | Source: " + source + " at line " + lineno + ":" + colno;
         addConsoleLog(glitchDetails, "error");
@@ -617,7 +588,7 @@
             const details = "Error: " + message + "\nSource: " + source + " at line " + lineno + ":" + colno + "\nStack:\n" + stack;
             window.AndroidInterface.logHtmlGlitch("browser.html", details);
         }
-        return false; // Propagate to browser normally
+        return false;
     };
 
     window.onunhandledrejection = function(event) {
@@ -629,27 +600,19 @@
         }
     };
 
-    /**
-     * Resolves the user input and performs top-level redirection on the WebView context.
-     * Treats valid-looking strings as URLs, and other inputs as Google Search queries.
-     */
     function navigatePortalAddress() {
         const input = document.getElementById('portalAddressInput');
         let query = input.value.trim();
         if (!query) return;
 
         let targetUrl = query;
-
-        // Check if the query is a search term or a specific URL
         const isUrlPattern = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/i;
 
         if (isUrlPattern.test(query)) {
-            // If it behaves like a URL, ensure valid protocol prefix is attached
             if (!query.startsWith("http://") && !query.startsWith("https://")) {
                 targetUrl = "https://" + query;
             }
         } else {
-            // If it is a raw search query, route through Google Search natively
             targetUrl = "https://www.google.com/search?q=" + encodeURIComponent(query);
         }
 
@@ -659,7 +622,6 @@
             window.AndroidInterface.nativeLog("Portal Redirecting Main Frame -> " + targetUrl, "native");
         }
 
-        // Redirect the primary top-level WebView context to bypass iframe limitations
         window.location.href = targetUrl;
     }
 
@@ -670,32 +632,28 @@
     }
 
     function exitBrowser() {
-        addConsoleLog("Navigating UI back to primary chat screen", "system");
-        if (window.AndroidInterface && window.AndroidInterface.loadLocalUrl) {
-            window.AndroidInterface.loadLocalUrl('index.html');
+        addConsoleLog("Navigating UI back to native chat screen", "system");
+        if (window.AndroidInterface && typeof window.AndroidInterface.closeBrowserPortal === 'function') {
+            window.AndroidInterface.closeBrowserPortal();
+        } else if (window.AndroidInterface && typeof window.AndroidInterface.finishActivity === 'function') {
+            window.AndroidInterface.finishActivity();
         } else {
-            window.location.href = 'index.html';
+            window.history.back();
         }
     }
 
-    // Legacy Scraper routing removed. Re-connects Nostr WebSocket Client manually.
     function goToScraper() {
         addConsoleLog("Manual Scraper reconnect sequence triggered", "system");
         initNostrConnection();
     }
 
-    // =========================================================================
-    // DECENTRALIZED RECEIVER CLIENT ENGINE & ERROR REPORTING
-    // =========================================================================
     let nostrSocket = null;
     let connectionForcedClosed = false;
 
-    // Convert byte array to hexadecimal string
     function bytesToHex(bytes) {
         return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    // Bech32 npub/nsec Key Decoder
     const BECH32_ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
     function decodeBech32(bechString) {
         const separatorIndex = bechString.lastIndexOf('1');
@@ -711,7 +669,7 @@
             data.push(charIndex);
         }
 
-        const values = data.slice(0, -6); // Strip 6-character checksum
+        const values = data.slice(0, -6);
         let accumulator = 0;
         let bits = 0;
         const bytes = [];
@@ -728,51 +686,45 @@
         return new Uint8Array(bytes);
     }
 
-    /**
-     * Reads native settings to load configured values onto the HTML inputs
-     */
     function loadNostrSettingsInUI() {
-        if (!window.AndroidInterface) return;
-        try {
-            const settingsJson = window.AndroidInterface.getNostrSettings();
-            const settings = JSON.parse(settingsJson);
-            if (settings) {
-                const pubKey = settings.public_key || "";
-                const relayUrl = settings.relay_url || "wss://relay.damus.io";
+        let pubKey = localStorage.getItem("nostr_pubkey") || "";
+        let relayUrl = localStorage.getItem("nostr_relay") || "wss://relay.damus.io";
 
-                document.getElementById("extensionPublicKey").value = pubKey;
-                document.getElementById("nostrRelaySelect").value = relayUrl;
-
-                addConsoleLog("Settings updated in UI. Extension key: " + pubKey.substring(0, 15) + "...", "info");
-                window.AndroidInterface.nativeLog("browser.html: Synchronized handshake configuration UI.", "info");
+        if (window.AndroidInterface && typeof window.AndroidInterface.getNostrSettings === 'function') {
+            try {
+                const settingsJson = window.AndroidInterface.getNostrSettings();
+                const settings = JSON.parse(settingsJson);
+                if (settings) {
+                    if (settings.public_key) pubKey = settings.public_key;
+                    if (settings.relay_url) relayUrl = settings.relay_url;
+                }
+            } catch (e) {
+                addConsoleLog("Failed to sync native settings: " + e.message, "error");
             }
-        } catch (e) {
-            addConsoleLog("Failed to sync settings: " + e.message, "error");
-            window.AndroidInterface.logHtmlGlitch("browser.html", "Failed to deserialize settings payload: " + e.message);
         }
+
+        document.getElementById("extensionPublicKey").value = pubKey;
+        document.getElementById("nostrRelaySelect").value = relayUrl;
+        addConsoleLog("Settings updated in UI. Extension key: " + (pubKey ? pubKey.substring(0, 15) + "..." : "not set"), "info");
     }
 
-    /**
-     * Persists settings changes back to the native backend on the fly
-     */
     function saveNostrSettingsFromUI() {
-        if (!window.AndroidInterface) return;
-        try {
-            const pubKey = document.getElementById("extensionPublicKey").value.trim();
-            const relayUrl = document.getElementById("nostrRelaySelect").value;
+        const pubKey = document.getElementById("extensionPublicKey").value.trim();
+        const relayUrl = document.getElementById("nostrRelaySelect").value;
 
-            window.AndroidInterface.saveNostrSettings(pubKey, relayUrl);
-            addConsoleLog("Settings auto-saved. Extension key: " + pubKey.substring(0, 15) + "...", "info");
-            window.AndroidInterface.nativeLog("browser.html: Auto-saved handshakes to SharedPreferences.", "info");
-        } catch (e) {
-            addConsoleLog("Failed to auto-save settings: " + e.message, "error");
-            window.AndroidInterface.logHtmlGlitch("browser.html", "Failed to persist updated settings: " + e.message);
+        localStorage.setItem("nostr_pubkey", pubKey);
+        localStorage.setItem("nostr_relay", relayUrl);
+
+        if (window.AndroidInterface && typeof window.AndroidInterface.saveNostrSettings === 'function') {
+            try {
+                window.AndroidInterface.saveNostrSettings(pubKey, relayUrl);
+                addConsoleLog("Settings auto-saved. Extension key: " + (pubKey ? pubKey.substring(0, 15) + "..." : "empty"), "info");
+            } catch (e) {
+                addConsoleLog("Failed to auto-save settings natively: " + e.message, "error");
+            }
         }
     }
 
-    /**
-     * Reconnection and Active State Toggle mechanism
-     */
     function toggleNostrConnection() {
         if (nostrSocket && (nostrSocket.readyState === WebSocket.OPEN || nostrSocket.readyState === WebSocket.CONNECTING)) {
             connectionForcedClosed = true;
@@ -781,7 +733,6 @@
                 try { nostrSocket.close(); } catch(e) {}
             }
             updateStatusUI("disconnected");
-            window.AndroidInterface.nativeLog("browser.html: Manually disconnected relay socket.", "info");
         } else {
             connectionForcedClosed = false;
             addConsoleLog("Manual connection open requested by user.", "system");
@@ -789,14 +740,7 @@
         }
     }
 
-    /**
-     * Initializes the WebSocket connection using credentials retrieved from the HTML inputs,
-     * featuring comprehensive exception-trap logging.
-     */
     function initNostrConnection() {
-        if (!window.AndroidInterface) return;
-
-        // Terminate existing socket instances cleanly before opening a new channel
         if (nostrSocket) {
             try { 
                 addConsoleLog("Closing previous WebSocket connection...", "info");
@@ -807,51 +751,44 @@
         updateStatusUI("connecting");
 
         try {
-            // Read active targets directly from the configured HTML inputs
             const relayUrl = document.getElementById("nostrRelaySelect").value || "wss://relay.damus.io";
             const extPubkey = document.getElementById("extensionPublicKey").value.trim();
 
             if (!extPubkey) {
-                addConsoleLog("Connection aborted: Extension key is missing.", "warning");
-                window.AndroidInterface.showToast("Handshake Warning: Link Extension Public ID in Settings.");
+                addConsoleLog("Connection waiting: Link Extension Public ID in Settings.", "warning");
+                if (window.AndroidInterface && typeof window.AndroidInterface.showToast === 'function') {
+                    window.AndroidInterface.showToast("Handshake Warning: Link Extension Public ID in Settings.");
+                }
                 updateStatusUI("error");
                 return;
             }
 
-            // Dynamic Key Format Translation (Bech32 npub to 32-byte Hex)
             let hexPubkey = extPubkey;
             try {
                 const hexRegex = /^[a-fA-F0-9]{64}$/;
                 if (hexRegex.test(extPubkey)) {
                     addConsoleLog("Detected raw 64-character hexadecimal public key format.", "info");
-                    window.AndroidInterface.nativeLog("Inbox Client: Detected raw 64-character hexadecimal public key format.", "info");
                 } else if (extPubkey.startsWith("npub1")) {
                     addConsoleLog("Detected Bech32 npub format. Translating to hex...", "info");
-                    window.AndroidInterface.nativeLog("Inbox Client: Detected Bech32 npub format. Translating to hex...", "info");
                     const decodedBytes = decodeBech32(extPubkey);
                     hexPubkey = bytesToHex(decodedBytes);
                     addConsoleLog("Derived hex public key: " + hexPubkey.substring(0, 15) + "...", "info");
-                    window.AndroidInterface.nativeLog("Inbox Client: Derived hex public key: " + hexPubkey, "info");
                 } else {
                     throw new Error("Unsupported public key format. Must be 64-char hex or start with 'npub1'.");
                 }
             } catch (keyError) {
                 addConsoleLog("Public key parsing failed: " + keyError.message, "error");
-                window.AndroidInterface.reportGlitchedLogic("NOSTR_KEY_PARSE_FAILED", "Failed to parse public key '" + extPubkey + "': " + keyError.message);
                 updateStatusUI("error");
                 return;
             }
 
             addConsoleLog("Connecting to Nostr relay: " + relayUrl + "...", "info");
-            window.AndroidInterface.nativeLog("Inbox Client: Connecting directly to " + relayUrl, "info");
             nostrSocket = new WebSocket(relayUrl);
 
             nostrSocket.onopen = () => {
                 updateStatusUI("connected");
                 addConsoleLog("Nostr socket connected successfully.", "success");
-                window.AndroidInterface.nativeLog("Inbox Client: Socket established successfully.", "info");
 
-                // Broadcast NIP-01 Subscription Request (Filter for Kind 1 events authored by the extension)
                 const reqFrame = ["REQ", "puter_inbox_sub", {
                     kinds: [1],
                     authors: [hexPubkey],
@@ -865,18 +802,12 @@
                 try {
                     const message = JSON.parse(msgEvent.data);
 
-                    // Route notice rejections natively
                     if (Array.isArray(message) && message[0] === "NOTICE") {
-                        const rejectDetails = `Relay Notice from ${relayUrl}: ${message[1]}`;
                         addConsoleLog("Relay Notice: " + message[1], "warning");
-                        window.AndroidInterface.reportGlitchedLogic("NOSTR_RELAY_NOTICE", rejectDetails);
                     }
 
-                    // Handle standard subscription termination messages natively
                     if (Array.isArray(message) && message[0] === "CLOSED") {
-                        const closeReason = `Relay Subscription Closed from ${relayUrl} on sub: ${message[1]} -- Reason: ${message[2] || 'Unspecified'}`;
                         addConsoleLog("Relay Subscription Closed: " + (message[2] || "Unspecified reason"), "error");
-                        window.AndroidInterface.reportGlitchedLogic("NOSTR_RELAY_CLOSED", closeReason);
                     }
 
                     if (Array.isArray(message) && message[0] === "EVENT" && message[2]) {
@@ -886,40 +817,25 @@
                     }
                 } catch(e) {
                     addConsoleLog("Failed to parse incoming frame: " + e.message, "error");
-                    const parseDetails = "Failed to deserialize WebSocket Frame: " + e.message + "\nFrame: " + msgEvent.data;
-                    window.AndroidInterface.logHtmlGlitch("NOSTR_SERIALIZE_EXCEPTION", parseDetails);
                 }
             };
 
             nostrSocket.onclose = (closeEvent) => {
                 updateStatusUI("disconnected");
                 addConsoleLog("Nostr socket connection closed. Code: " + closeEvent.code + " | Clean: " + closeEvent.wasClean, "warning");
-                window.AndroidInterface.nativeLog("Inbox Client: Connection closed.", "info");
-
-                // Track unexpected connection terminations natively
-                if (!closeEvent.wasClean && !connectionForcedClosed) {
-                    const details = `Disconnection from ${relayUrl}. Code: ${closeEvent.code} | Reason: ${closeEvent.reason || 'None'}`;
-                    window.AndroidInterface.reportGlitchedLogic("NOSTR_SOCKET_CLOSE", details);
-                }
             };
 
             nostrSocket.onerror = (error) => {
                 updateStatusUI("error");
                 addConsoleLog("Nostr socket experienced a communication error.", "error");
-                const errDetails = `WebSocket error occurred during communication with: ${relayUrl}. ReadyState: ${nostrSocket.readyState}`;
-                window.AndroidInterface.reportGlitchedLogic("NOSTR_SOCKET_ERROR", errDetails);
             };
 
         } catch (setupError) {
             updateStatusUI("error");
             addConsoleLog("WebSocket setup exception: " + setupError.message, "error");
-            window.AndroidInterface.reportGlitchedLogic("NOSTR_SETUP_CRITICAL", "Setup Failed for relay " + (document.getElementById("nostrRelaySelect")?.value || "unknown") + " with error: " + setupError.message);
         }
     }
 
-    /**
-     * Dynamic UI state-machine switcher
-     */
     function updateStatusUI(state) {
         const dot = document.getElementById("statusDot");
         const txt = document.getElementById("statusText");
@@ -947,39 +863,27 @@
         }
     }
 
-    /**
-     * Receives raw Nostr events, parses their nested contents,
-     * and maps them dynamically to "Tiny Box" cards.
-     * FIXED: Multi-item parallel scraping payload now resolves unique card IDs to prevent DOM rendering skips.
-     */
     function processIncomingScrapedEvent(event) {
         try {
             const rawContent = event.content;
             if (!rawContent) return;
 
-            // Deserialize content string array
             const itemsList = JSON.parse(rawContent);
             if (!Array.isArray(itemsList) || itemsList.length === 0) return;
 
-            // Clear empty container state
             const listContainer = document.getElementById("inboxList");
             if (listContainer.innerHTML.includes("No incoming data")) {
                 listContainer.innerHTML = '';
             }
 
             itemsList.forEach((item, index) => {
-                // Identify category mapping metadata
                 const isUniversal = (item.hierarchy && item.hierarchy.main_category === "Universal Scrape");
-
-                // Resolve unique indexing key to prevent rendering skip on multi-item parallel events
                 const itemKey = isUniversal ? (item.specifications.title || "UNI_" + index) : (item.specifications.asin || "AMZN_" + index);
                 const cardId = `box_${event.id}_${itemKey}`;
 
-                // Ensure duplicate check before adding card element
                 const existingCard = document.getElementById(cardId);
                 if (existingCard) return;
 
-                // 2. Extracts labeling details (extracts title/model)
                 let label = "";
                 let subLabel = "";
 
@@ -991,7 +895,6 @@
                     subLabel = `Brand: ${item.specifications.brand || 'N/A'}`;
                 }
 
-                // 3. Create the Tiny Box card
                 const card = document.createElement("div");
                 card.className = "tiny-box";
                 card.id = cardId;
@@ -1004,11 +907,9 @@
                     <span class="material-symbols-outlined tiny-box-icon">archive</span>
                 `;
 
-                // 4. Save logic on click: Passes JSON to native bridge
                 card.onclick = () => {
                     const trackingId = isUniversal ? (item.specifications.title || "UNI_" + Date.now() + "_" + index) : (item.specifications.asin || "AMZN_" + Date.now() + "_" + index);
 
-                    // Transform to Puter database structure
                     const databaseStructure = {
                         type: isUniversal ? "universal_web" : "amazon_catalog",
                         scraped_id: trackingId,
@@ -1023,10 +924,13 @@
                     };
 
                     addConsoleLog("Saving scraped item to local database. ID: " + trackingId, "system");
-                    window.AndroidInterface.addScrapedProduct(trackingId, JSON.stringify(databaseStructure));
-                    window.AndroidInterface.showToast(`Saved to history: ${label}`);
+                    if (window.AndroidInterface && typeof window.AndroidInterface.addScrapedProduct === 'function') {
+                        window.AndroidInterface.addScrapedProduct(trackingId, JSON.stringify(databaseStructure));
+                    }
+                    if (window.AndroidInterface && typeof window.AndroidInterface.showToast === 'function') {
+                        window.AndroidInterface.showToast(`Saved to history: ${label}`);
+                    }
 
-                    // Delete card visually after save
                     card.style.transform = "translateX(50px)";
                     card.style.opacity = "0";
                     setTimeout(() => {
@@ -1041,41 +945,34 @@
 
         } catch (parseError) {
             addConsoleLog("Mismatched content JSON format: " + parseError.message, "error");
-            const errDetails = "Mismatched content JSON format: " + parseError.message + "\nEvent Content: " + event.content;
-            window.AndroidInterface.logHtmlGlitch("NOSTR_PARSER_EXCEPTION", errDetails);
         }
     }
 
-    // =========================================================================
-    // NATIVE OPERATIONAL MODE SYNCHRONIZATION AND STATE CHANGERS
-    // =========================================================================
-
-    /**
-     * Active click handler mapped directly to the segmented mode selector card.
-     * Sets the saved preference in native SharedPreferences on the fly.
-     * Requirement: Instruction Two and Four
-     */
     function setOperationalMode(isAuto) {
-        if (!window.AndroidInterface) return;
-        try {
-            window.AndroidInterface.setAutoMode(isAuto);
-            updateOperationalModeUI(isAuto);
-            addConsoleLog("Operational preference updated natively. AutoMode: " + isAuto, "system");
-            window.AndroidInterface.showToast("Switched system mode to: " + (isAuto ? "Auto Mode" : "Manual Mode"));
-            window.AndroidInterface.nativeLog("browser.html: Operational preference updated natively.", "info");
-        } catch (e) {
-            addConsoleLog("Failed to write operational preference: " + e.message, "error");
-            window.AndroidInterface.logHtmlGlitch("browser.html", "Failed to write operational preference: " + e.message);
+        updateOperationalModeUI(isAuto);
+        localStorage.setItem("operational_mode_auto", isAuto ? "true" : "false");
+        addConsoleLog("Operational preference updated: " + (isAuto ? "Auto Mode" : "Manual Mode"), "system");
+
+        if (window.AndroidInterface) {
+            try {
+                if (typeof window.AndroidInterface.setAutoMode === 'function') {
+                    window.AndroidInterface.setAutoMode(isAuto);
+                } else if (typeof window.AndroidInterface.setOperationalMode === 'function') {
+                    window.AndroidInterface.setOperationalMode(isAuto ? "AUTO" : "MANUAL");
+                }
+                if (typeof window.AndroidInterface.showToast === 'function') {
+                    window.AndroidInterface.showToast("Switched system mode to: " + (isAuto ? "Auto Mode" : "Manual Mode"));
+                }
+            } catch (e) {
+                addConsoleLog("Failed to write operational preference natively: " + e.message, "error");
+            }
         }
     }
 
-    /**
-     * Synchronizes active CSS class highlights of the selector buttons
-     * based on active state parameters.
-     */
     function updateOperationalModeUI(isAuto) {
         const btnAuto = document.getElementById("btnAutoMode");
         const btnManual = document.getElementById("btnManualMode");
+        if (!btnAuto || !btnManual) return;
 
         if (isAuto) {
             btnAuto.classList.add("active");
@@ -1086,28 +983,31 @@
         }
     }
 
-    /**
-     * Queries the native backend to align UI buttons on page start.
-     */
     function syncOperationalModeOnLoad() {
-        if (!window.AndroidInterface) return;
-        try {
-            const isAuto = window.AndroidInterface.getAutoMode();
-            updateOperationalModeUI(isAuto);
-            addConsoleLog("Synchronized mode state with native backend. AutoMode: " + isAuto, "info");
-            window.AndroidInterface.nativeLog("browser.html: Synchronized state with SharedPreferences.", "info");
-        } catch (e) {
-            addConsoleLog("Failed to sync mode state on load: " + e.message, "error");
-            window.AndroidInterface.logHtmlGlitch("browser.html", "Failed to query operational mode state: " + e.message);
+        let isAuto = localStorage.getItem("operational_mode_auto") === "true";
+
+        if (window.AndroidInterface) {
+            try {
+                if (typeof window.AndroidInterface.getAutoMode === 'function') {
+                    isAuto = window.AndroidInterface.getAutoMode();
+                } else if (typeof window.AndroidInterface.getOperationalMode === 'function') {
+                    const mode = window.AndroidInterface.getOperationalMode();
+                    isAuto = (mode === "AUTO");
+                }
+            } catch (e) {
+                addConsoleLog("Failed to sync mode state on load: " + e.message, "error");
+            }
         }
+
+        updateOperationalModeUI(isAuto);
+        addConsoleLog("Synchronized mode state on load. AutoMode: " + isAuto, "info");
     }
 
-    // Initialize Settings UI and Connection on start
     window.onload = () => {
         addConsoleLog("Page Lifecycle: browser.html onload complete.", "info");
         loadNostrSettingsInUI();
         initNostrConnection();
-        syncOperationalModeOnLoad(); // Instantly aligns buttons based on local save state
+        syncOperationalModeOnLoad();
     };
   </script>
 </body>
