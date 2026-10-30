@@ -70,17 +70,7 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void loadLocalUrl(String url) {
-        if (url == null || url.contains("index.html")) {
-            closeBrowserPortal();
-        } else if (mainActivity != null) {
-            mainActivity.runOnUiThread(() -> {
-                if (url.contains("bot.html")) {
-                    mainActivity.openTradersZone();
-                } else if (url.contains("browser.html")) {
-                    mainActivity.openBrowserWebsite();
-                }
-            });
-        }
+        closeBrowserPortal();
     }
 
     // --- OPERATIONAL MODE SYNCHRONIZATION (MANUAL / AUTO) ---
