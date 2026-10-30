@@ -562,8 +562,15 @@
         consoleBody.appendChild(logLine);
         consoleBody.scrollTop = consoleBody.scrollHeight;
 
-        if (window.AndroidInterface && window.AndroidInterface.logTechnicalEvent) {
-            window.AndroidInterface.logTechnicalEvent("browser_console: " + message);
+        // Safely forward to Android logger using 4-parameter signature matching Java
+        if (window.AndroidInterface) {
+            try {
+                if (typeof window.AndroidInterface.logTechnicalEvent === 'function') {
+                    window.AndroidInterface.logTechnicalEvent(type.toUpperCase(), "BROWSER_PORTAL", "Console Log", message);
+                } else if (typeof window.AndroidInterface.logDiagnostic === 'function') {
+                    window.AndroidInterface.logDiagnostic(message, "BROWSER_PORTAL");
+                }
+            } catch (ignored) {}
         }
     }
 
@@ -583,10 +590,14 @@
         const glitchDetails = "Global Exception: " + message + " | Source: " + source + " at line " + lineno + ":" + colno;
         addConsoleLog(glitchDetails, "error");
 
-        if (window.AndroidInterface && window.AndroidInterface.logHtmlGlitch) {
-            const stack = error ? error.stack : "No stack trace available";
-            const details = "Error: " + message + "\nSource: " + source + " at line " + lineno + ":" + colno + "\nStack:\n" + stack;
-            window.AndroidInterface.logHtmlGlitch("browser.html", details);
+        if (window.AndroidInterface) {
+            try {
+                if (typeof window.AndroidInterface.logHtmlGlitch === 'function') {
+                    const stack = error ? error.stack : "No stack trace available";
+                    const details = "Error: " + message + "\nSource: " + source + " at line " + lineno + ":" + colno + "\nStack:\n" + stack;
+                    window.AndroidInterface.logHtmlGlitch("browser.html", details);
+                }
+            } catch (ignored) {}
         }
         return false;
     };
@@ -595,8 +606,12 @@
         const reason = event.reason ? (event.reason.stack || event.reason) : "No rejection reason";
         addConsoleLog("Promise Rejection: " + reason, "error");
 
-        if (window.AndroidInterface && window.AndroidInterface.logHtmlGlitch) {
-            window.AndroidInterface.logHtmlGlitch("browser.html", "Unhandled Promise Rejection:\n" + reason);
+        if (window.AndroidInterface) {
+            try {
+                if (typeof window.AndroidInterface.logHtmlGlitch === 'function') {
+                    window.AndroidInterface.logHtmlGlitch("browser.html", "Unhandled Promise Rejection:\n" + reason);
+                }
+            } catch (ignored) {}
         }
     };
 
@@ -618,8 +633,12 @@
 
         addConsoleLog("Portal Redirecting Main Frame -> " + targetUrl, "system");
 
-        if (window.AndroidInterface && window.AndroidInterface.nativeLog) {
-            window.AndroidInterface.nativeLog("Portal Redirecting Main Frame -> " + targetUrl, "native");
+        if (window.AndroidInterface) {
+            try {
+                if (typeof window.AndroidInterface.nativeLog === 'function') {
+                    window.AndroidInterface.nativeLog("Portal Redirecting Main Frame -> " + targetUrl, "native");
+                }
+            } catch (ignored) {}
         }
 
         window.location.href = targetUrl;
@@ -632,12 +651,24 @@
     }
 
     function exitBrowser() {
-        addConsoleLog("Navigating UI back to native chat screen", "system");
-        if (window.AndroidInterface && typeof window.AndroidInterface.closeBrowserPortal === 'function') {
-            window.AndroidInterface.closeBrowserPortal();
-        } else if (window.AndroidInterface && typeof window.AndroidInterface.finishActivity === 'function') {
-            window.AndroidInterface.finishActivity();
-        } else {
+        try {
+            addConsoleLog("Navigating UI back to native chat screen", "system");
+        } catch (ignored) {}
+
+        let closed = false;
+        if (window.AndroidInterface) {
+            try {
+                if (typeof window.AndroidInterface.closeBrowserPortal === 'function') {
+                    window.AndroidInterface.closeBrowserPortal();
+                    closed = true;
+                } else if (typeof window.AndroidInterface.finishActivity === 'function') {
+                    window.AndroidInterface.finishActivity();
+                    closed = true;
+                }
+            } catch (ignored) {}
+        }
+
+        if (!closed) {
             window.history.back();
         }
     }
@@ -690,13 +721,15 @@
         let pubKey = localStorage.getItem("nostr_pubkey") || "";
         let relayUrl = localStorage.getItem("nostr_relay") || "wss://relay.damus.io";
 
-        if (window.AndroidInterface && typeof window.AndroidInterface.getNostrSettings === 'function') {
+        if (window.AndroidInterface) {
             try {
-                const settingsJson = window.AndroidInterface.getNostrSettings();
-                const settings = JSON.parse(settingsJson);
-                if (settings) {
-                    if (settings.public_key) pubKey = settings.public_key;
-                    if (settings.relay_url) relayUrl = settings.relay_url;
+                if (typeof window.AndroidInterface.getNostrSettings === 'function') {
+                    const settingsJson = window.AndroidInterface.getNostrSettings();
+                    const settings = JSON.parse(settingsJson);
+                    if (settings) {
+                        if (settings.public_key) pubKey = settings.public_key;
+                        if (settings.relay_url) relayUrl = settings.relay_url;
+                    }
                 }
             } catch (e) {
                 addConsoleLog("Failed to sync native settings: " + e.message, "error");
@@ -715,10 +748,12 @@
         localStorage.setItem("nostr_pubkey", pubKey);
         localStorage.setItem("nostr_relay", relayUrl);
 
-        if (window.AndroidInterface && typeof window.AndroidInterface.saveNostrSettings === 'function') {
+        if (window.AndroidInterface) {
             try {
-                window.AndroidInterface.saveNostrSettings(pubKey, relayUrl);
-                addConsoleLog("Settings auto-saved. Extension key: " + (pubKey ? pubKey.substring(0, 15) + "..." : "empty"), "info");
+                if (typeof window.AndroidInterface.saveNostrSettings === 'function') {
+                    window.AndroidInterface.saveNostrSettings(pubKey, relayUrl);
+                    addConsoleLog("Settings auto-saved. Extension key: " + (pubKey ? pubKey.substring(0, 15) + "..." : "empty"), "info");
+                }
             } catch (e) {
                 addConsoleLog("Failed to auto-save settings natively: " + e.message, "error");
             }
@@ -729,9 +764,7 @@
         if (nostrSocket && (nostrSocket.readyState === WebSocket.OPEN || nostrSocket.readyState === WebSocket.CONNECTING)) {
             connectionForcedClosed = true;
             addConsoleLog("Manual connection closure requested by user.", "warning");
-            if (nostrSocket) {
-                try { nostrSocket.close(); } catch(e) {}
-            }
+            try { nostrSocket.close(); } catch(e) {}
             updateStatusUI("disconnected");
         } else {
             connectionForcedClosed = false;
@@ -756,8 +789,12 @@
 
             if (!extPubkey) {
                 addConsoleLog("Connection waiting: Link Extension Public ID in Settings.", "warning");
-                if (window.AndroidInterface && typeof window.AndroidInterface.showToast === 'function') {
-                    window.AndroidInterface.showToast("Handshake Warning: Link Extension Public ID in Settings.");
+                if (window.AndroidInterface) {
+                    try {
+                        if (typeof window.AndroidInterface.showToast === 'function') {
+                            window.AndroidInterface.showToast("Handshake Warning: Link Extension Public ID in Settings.");
+                        }
+                    } catch (ignored) {}
                 }
                 updateStatusUI("error");
                 return;
@@ -795,7 +832,11 @@
                     "#t": ["puter_unofficial_scrap"]
                 }];
                 addConsoleLog("Broadcasting NIP-01 subscription request: puter_inbox_sub", "info");
-                nostrSocket.send(JSON.stringify(reqFrame));
+                try {
+                    nostrSocket.send(JSON.stringify(reqFrame));
+                } catch (sendErr) {
+                    addConsoleLog("Subscription send error: " + sendErr.message, "error");
+                }
             };
 
             nostrSocket.onmessage = (msgEvent) => {
@@ -924,11 +965,15 @@
                     };
 
                     addConsoleLog("Saving scraped item to local database. ID: " + trackingId, "system");
-                    if (window.AndroidInterface && typeof window.AndroidInterface.addScrapedProduct === 'function') {
-                        window.AndroidInterface.addScrapedProduct(trackingId, JSON.stringify(databaseStructure));
-                    }
-                    if (window.AndroidInterface && typeof window.AndroidInterface.showToast === 'function') {
-                        window.AndroidInterface.showToast(`Saved to history: ${label}`);
+                    if (window.AndroidInterface) {
+                        try {
+                            if (typeof window.AndroidInterface.addScrapedProduct === 'function') {
+                                window.AndroidInterface.addScrapedProduct(trackingId, JSON.stringify(databaseStructure));
+                            }
+                            if (typeof window.AndroidInterface.showToast === 'function') {
+                                window.AndroidInterface.showToast(`Saved to history: ${label}`);
+                            }
+                        } catch (ignored) {}
                     }
 
                     card.style.transform = "translateX(50px)";
