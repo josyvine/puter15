@@ -25,6 +25,8 @@
       align-items: center;
       padding-top: 80px;
       padding-bottom: 40px;
+      touch-action: pan-y;
+      -webkit-overflow-scrolling: touch;
     }
 
     header {
@@ -292,7 +294,7 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.05);
       display: flex;
       flex-direction: column;
-      max-height: 250px;
+      max-height: 320px;
     }
 
     .inbox-header {
@@ -309,6 +311,12 @@
       padding-bottom: 6px;
     }
 
+    .inbox-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
     .inbox-list {
       display: flex;
       flex-direction: column;
@@ -316,6 +324,8 @@
       overflow-y: auto;
       flex: 1;
       padding-right: 5px;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
     }
 
     .tiny-box {
@@ -327,18 +337,15 @@
       justify-content: space-between;
       align-items: center;
       cursor: pointer;
-      transition: all 0.2s ease-in-out;
+      position: relative;
+      touch-action: pan-y;
+      user-select: none;
       animation: slideIn 0.3s ease-out;
     }
 
     @keyframes slideIn {
       from { transform: translateY(10px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
-    }
-
-    .tiny-box:hover {
-      background: #e8f0fe;
-      border-color: #1a73e8;
     }
 
     .tiny-box-content {
@@ -348,6 +355,7 @@
       overflow: hidden;
       flex: 1;
       padding-right: 10px;
+      pointer-events: none;
     }
 
     .tiny-box-title {
@@ -367,6 +375,7 @@
     .tiny-box-icon {
       color: #1a73e8;
       font-size: 20px;
+      pointer-events: none;
     }
 
     .status-indicator {
@@ -428,6 +437,8 @@
       border-radius: 6px;
       white-space: pre-wrap;
       word-break: break-all;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
     }
 
     .console-btn-clear {
@@ -505,9 +516,12 @@
   <div class="inbox-container">
     <div class="inbox-header">
       <span>Scraper Inbox</span>
-      <div class="status-indicator">
-        <div id="statusDot" class="status-dot"></div>
-        <span id="statusText">Offline</span>
+      <div class="inbox-actions">
+        <button class="console-btn-clear" onclick="clearScraperInbox()">Clear All</button>
+        <div class="status-indicator">
+          <div id="statusDot" class="status-dot"></div>
+          <span id="statusText">Offline</span>
+        </div>
       </div>
     </div>
     <div id="inboxList" class="inbox-list">
@@ -562,7 +576,6 @@
         consoleBody.appendChild(logLine);
         consoleBody.scrollTop = consoleBody.scrollHeight;
 
-        // Safely forward to Android logger using 4-parameter signature matching Java
         if (window.AndroidInterface) {
             try {
                 if (typeof window.AndroidInterface.logTechnicalEvent === 'function') {
@@ -579,6 +592,14 @@
         if (consoleBody) {
             consoleBody.innerHTML = "Console log cleared.\n";
             addConsoleLog("Console log cleared.", "system");
+        }
+    }
+
+    function clearScraperInbox() {
+        const listContainer = document.getElementById("inboxList");
+        if (listContainer) {
+            listContainer.innerHTML = '<div style="color: #999; text-align: center; font-size: 12px; margin-top: 20px;">No incoming data packets yet.</div>';
+            addConsoleLog("Scraper Inbox wiped clean.", "system");
         }
     }
 
@@ -909,7 +930,6 @@
             const rawContent = event.content;
             if (!rawContent) return;
 
-            // --- ADDED: BRIDGE TO UNFREEZE CHAT BUBBLE ---
             const isAuto = localStorage.getItem("operational_mode_auto") === "true";
             if (isAuto && window.AndroidInterface) {
                 try {
@@ -919,23 +939,19 @@
                     }
                 } catch (ignored) {}
             }
-            // ---------------------------------------------
 
             const itemsList = JSON.parse(rawContent);
             if (!Array.isArray(itemsList) || itemsList.length === 0) return;
 
             const listContainer = document.getElementById("inboxList");
-            if (listContainer.innerHTML.includes("No incoming data")) {
-                listContainer.innerHTML = '';
-            }
+            
+            // WIPE OLD NOSTR DATA: Clean out previous search cards when a new search batch arrives
+            listContainer.innerHTML = '';
 
             itemsList.forEach((item, index) => {
                 const isUniversal = (item.hierarchy && item.hierarchy.main_category === "Universal Scrape");
                 const itemKey = isUniversal ? (item.specifications.title || "UNI_" + index) : (item.specifications.asin || "AMZN_" + index);
                 const cardId = `box_${event.id}_${itemKey}`;
-
-                const existingCard = document.getElementById(cardId);
-                if (existingCard) return;
 
                 let label = "";
                 let subLabel = "";
@@ -960,7 +976,58 @@
                     <span class="material-symbols-outlined tiny-box-icon">archive</span>
                 `;
 
-                card.onclick = () => {
+                // --- REAL SWIPE-TO-DELETE GESTURE FOR NOSTR CARDS ---
+                let touchStartX = 0;
+                let touchStartY = 0;
+                let isHorizontalSwipe = false;
+
+                card.addEventListener('touchstart', (e) => {
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                    isHorizontalSwipe = false;
+                    card.style.transition = 'none';
+                }, { passive: true });
+
+                card.addEventListener('touchmove', (e) => {
+                    const diffX = e.touches[0].clientX - touchStartX;
+                    const diffY = e.touches[0].clientY - touchStartY;
+
+                    // If moving horizontally more than vertically, treat as swipe
+                    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 10) {
+                        isHorizontalSwipe = true;
+                        if (diffX < 0) { // Only swipe left
+                            card.style.transform = `translateX(${diffX}px)`;
+                            card.style.opacity = `${1 - Math.abs(diffX) / 250}`;
+                        }
+                    }
+                }, { passive: true });
+
+                card.addEventListener('touchend', (e) => {
+                    card.style.transition = 'transform 0.25s ease-out, opacity 0.25s ease-out';
+                    const diffX = e.changedTouches[0].clientX - touchStartX;
+
+                    // Swiped left by more than 75px: delete ONLY this specific Nostr card
+                    if (isHorizontalSwipe && diffX < -75) {
+                        card.style.transform = 'translateX(-120%)';
+                        card.style.opacity = '0';
+                        setTimeout(() => {
+                            card.remove();
+                            addConsoleLog("Swiped and wiped Nostr card: " + label, "info");
+                            if (listContainer.children.length === 0) {
+                                listContainer.innerHTML = '<div style="color: #999; text-align: center; font-size: 12px; margin-top: 20px;">No incoming data packets yet.</div>';
+                            }
+                        }, 250);
+                    } else {
+                        // Snap back smoothly
+                        card.style.transform = 'translateX(0)';
+                        card.style.opacity = '1';
+                    }
+                });
+
+                // Tap to Save Card Locally
+                card.onclick = (e) => {
+                    if (isHorizontalSwipe) return; // Ignore clicks if user was swiping
+
                     const trackingId = isUniversal ? (item.specifications.title || "UNI_" + Date.now() + "_" + index) : (item.specifications.asin || "AMZN_" + Date.now() + "_" + index);
 
                     const databaseStructure = {
@@ -987,13 +1054,6 @@
                             }
                         } catch (ignored) {}
                     }
-
-                    card.style.transform = "translateX(50px)";
-                    card.style.opacity = "0";
-                    setTimeout(() => {
-                        card.remove();
-                        addConsoleLog("Cleaned card view for ID: " + trackingId, "info");
-                    }, 300);
                 };
 
                 listContainer.appendChild(card);
