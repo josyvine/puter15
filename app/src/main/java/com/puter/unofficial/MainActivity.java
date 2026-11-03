@@ -200,6 +200,10 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     private boolean isLiveVoiceConnected = false;
     private String lastInjectedPuterToken = null;
 
+    // Auto Mode Memory Tracking
+    private String pendingAutoModePrompt = null;
+    private ChatMessage pendingAutoModeAssistantMsg = null;
+
     private TextToSpeech textToSpeech;
     private SpeechRecognizer speechRecognizer;
     private Vibrator vibrator;
@@ -226,7 +230,6 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         isLiveMode = prefs.getBoolean(AppConstants.KEY_USE_LIVE_MODELS, false);
         isAutoMode = prefs.getBoolean(AppConstants.KEY_AUTO_MODE, false);
 
-        // Initialize Managers
         urlContextScraper = new UrlContextScraper();
         modelCatalogManager = new ModelCatalogManager(this);
         dialogManager = new AppDialogManager(this, prefs, sessionManager, geminiService, this::onDialogManagerAuthSuccess);
@@ -1377,12 +1380,14 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     }
 
     private void executeAutoModeCrawlSequence(String prompt, ChatMessage assistantMsg) {
+        pendingAutoModePrompt = prompt;
+        pendingAutoModeAssistantMsg = assistantMsg;
+
         isGenerating = true;
         updateSendButtonState();
         ecgLoaderContainer.setVisibility(View.VISIBLE);
         tvEcgStatus.setText("Auto Mode: Connecting to relay...");
 
-        // Ensure background QueryWatcherService is active
         try {
             Intent serviceIntent = new Intent(this, QueryWatcherService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1417,6 +1422,71 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
             wakeUpKiwi(prompt);
         }, 1800);
+    }
+
+    public void onAutoModeDataReceived(String rawContent) {
+        runOnUiThread(() -> {
+            LiveLogManager.getInstance().ok("AUTO_MODE", "Payload Arrived in Native", "Size: " + (rawContent != null ? rawContent.length() : 0) + " chars");
+
+            ChatMessage targetMsg = pendingAutoModeAssistantMsg;
+            if (targetMsg == null) {
+                targetMsg = currentActiveAssistantMsg;
+            }
+            if (targetMsg == null && currentSession != null && !currentSession.getMessages().isEmpty()) {
+                for (int i = currentSession.getMessages().size() - 1; i >= 0; i--) {
+                    ChatMessage m = currentSession.getMessages().get(i);
+                    if (ChatMessage.ROLE_BOT.equalsIgnoreCase(m.getRole())) {
+                        targetMsg = m;
+                        break;
+                    }
+                }
+            }
+
+            if (targetMsg == null) {
+                targetMsg = new ChatMessage("msg_bot_" + System.currentTimeMillis(), ChatMessage.ROLE_BOT, "", System.currentTimeMillis());
+                targetMsg.setModelUsed(activeModelId);
+                chatAdapter.addMessage(targetMsg);
+                if (currentSession != null) currentSession.addMessage(targetMsg);
+            }
+
+            targetMsg.setText("Analyzing scraped web data...");
+            targetMsg.setStreaming(true);
+            chatAdapter.notifyDataSetChanged();
+            rvChatTimeline.smoothScrollToPosition(chatAdapter.getItemCount() - 1);
+
+            isGenerating = true;
+            updateSendButtonState();
+            if (ecgLoaderContainer != null) {
+                ecgLoaderContainer.setVisibility(View.VISIBLE);
+                tvEcgStatus.setText("AI is answering from web context...");
+                try {
+                    Animation pulseAnim = AnimationUtils.loadAnimation(this, R.anim.ecg_trace_animation);
+                    if (ivEcgIcon != null) ivEcgIcon.startAnimation(pulseAnim);
+                } catch (Exception ignored) {}
+            }
+
+            String baseQuery = (pendingAutoModePrompt != null && !pendingAutoModePrompt.isEmpty())
+                    ? pendingAutoModePrompt
+                    : "iran us war update";
+
+            String contextBlock = "";
+            if (PuterChatManager.getActiveInstance() != null) {
+                contextBlock = PuterChatManager.getActiveInstance().buildContextFromScrapedData(rawContent);
+            } else {
+                contextBlock = "\n\n--- [LIVE WEB CONTEXT] ---\n" + rawContent + "\n--- [END CONTEXT] ---\n";
+            }
+
+            String augmentedPrompt = baseQuery + "\n" + contextBlock +
+                    "\n\nInstruction: Use the live scraped web context above to provide an accurate, clear, and comprehensive answer to the user query.";
+
+            currentActiveAssistantMsg = targetMsg;
+            final ChatMessage finalMsg = targetMsg;
+
+            routeGeneration(augmentedPrompt, Collections.emptyList(), finalMsg);
+
+            pendingAutoModePrompt = null;
+            pendingAutoModeAssistantMsg = null;
+        });
     }
 
     public void wakeUpKiwi(String query) {
@@ -2234,3 +2304,4 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         if (dialogManager != null) dialogManager.dismissAll();
     }
 }
+
