@@ -47,10 +47,13 @@ public class PuterChatManager {
     private static final String PUTER_ORIGIN = "https://puter.com";
     private static final String PUTER_REFERER = "https://puter.com/";
 
+    private static PuterChatManager activeInstance;
+
     private final Context context;
     private final OkHttpClient client;
     private final Handler mainHandler;
     private Call activeCall;
+    private AutoModeDataListener autoModeDataListener;
 
     public interface PuterChatListener {
         void onChunk(String chunkText);
@@ -64,6 +67,10 @@ public class PuterChatManager {
         void onError(String errorMessage);
     }
 
+    public interface AutoModeDataListener {
+        void onAutoModeDataAvailable(String rawContent, String formattedContext);
+    }
+
     public PuterChatManager(Context context) {
         this.context = context.getApplicationContext();
         this.client = new OkHttpClient.Builder()
@@ -72,6 +79,15 @@ public class PuterChatManager {
                 .writeTimeout(30, TimeUnit.SECONDS)
                 .build();
         this.mainHandler = new Handler(Looper.getMainLooper());
+        activeInstance = this;
+    }
+
+    public static PuterChatManager getActiveInstance() {
+        return activeInstance;
+    }
+
+    public void setAutoModeDataListener(AutoModeDataListener listener) {
+        this.autoModeDataListener = listener;
     }
 
     public void stopCurrentGeneration() {
@@ -79,6 +95,70 @@ public class PuterChatManager {
             activeCall.cancel();
             activeCall = null;
         }
+    }
+
+    // ==========================================
+    // AUTO MODE CONTEXT BUILDER & INJECTION
+    // ==========================================
+
+    /**
+     * Parses raw scraped JSON from Nostr/Kiwi into an AI-ready context block.
+     */
+    public String buildContextFromScrapedData(String rawScrapedJson) {
+        if (rawScrapedJson == null || rawScrapedJson.trim().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n\n--- [LIVE WEB SCRAPED CONTEXT VIA AUTO-MODE] ---\n");
+        try {
+            JSONArray arr = new JSONArray(rawScrapedJson);
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject item = arr.optJSONObject(i);
+                if (item == null) continue;
+                JSONObject specs = item.optJSONObject("specifications");
+                String title = specs != null ? specs.optString("title", "Article " + (i + 1)) : "Web Document";
+                String url = specs != null ? specs.optString("url", "") : "";
+                String content = specs != null ? specs.optString("raw_content", specs.optString("content", "")) : "";
+
+                sb.append("[").append(i + 1).append("] ").append(title).append("\n");
+                if (!url.isEmpty()) sb.append("Source: ").append(url).append("\n");
+                if (!content.isEmpty()) {
+                    if (content.length() > 4000) {
+                        content = content.substring(0, 4000) + "... [truncated]";
+                    }
+                    sb.append("Extracted Text: ").append(content).append("\n");
+                }
+                sb.append("\n");
+            }
+        } catch (Exception e) {
+            sb.append("Scraped Data Payload: ").append(rawScrapedJson).append("\n");
+        }
+        sb.append("--- [END OF WEB CONTEXT] ---\n");
+        return sb.toString();
+    }
+
+    /**
+     * Dispatches incoming auto-mode data from WebAppInterface to the active listener.
+     */
+    public void dispatchAutoModeData(String rawContent) {
+        String formatted = buildContextFromScrapedData(rawContent);
+        if (autoModeDataListener != null) {
+            mainHandler.post(() -> autoModeDataListener.onAutoModeDataAvailable(rawContent, formatted));
+        }
+    }
+
+    /**
+     * Injects the scraped context into the prompt and streams the AI completion.
+     */
+    public void sendChatCompletionWithScrapedContext(String rawScrapedJson, List<ChatMessage> history,
+                                                    String userPrompt, List<StagedFile> attachments,
+                                                    String modelId, GenerationConfig config,
+                                                    PuterChatListener listener) {
+        String contextBlock = buildContextFromScrapedData(rawScrapedJson);
+        String augmentedPrompt = userPrompt + "\n" + contextBlock +
+                "\n\nInstruction: Use the live web context above to provide an accurate, up-to-date answer to the user query.";
+
+        sendChatCompletion(history, augmentedPrompt, attachments, modelId, config, listener);
     }
 
     /**
@@ -277,14 +357,12 @@ public class PuterChatManager {
                     @Override
                     public void onFailure(Call call, java.io.IOException e) {
                         if (call.isCanceled()) return;
-                        // Retry with OpenAI endpoint on network failure
                         executeOpenAIFallback(messagesArray, normalizedModel, config, authToken, isImageGen, listener);
                     }
 
                     @Override
                     public void onResponse(Call call, Response response) {
                         if (!response.isSuccessful()) {
-                            // If drivers/call returns 404 or any error, fallback to Puter OpenAI endpoint
                             executeOpenAIFallback(messagesArray, normalizedModel, config, authToken, isImageGen, listener);
                             return;
                         }
@@ -309,7 +387,6 @@ public class PuterChatManager {
 
             if (config != null) {
                 if (config.getSystemInstructions() != null && !config.getSystemInstructions().isEmpty()) {
-                    // Inject system message turn for standard OpenAI compatibility
                     JSONObject sysTurn = new JSONObject();
                     sysTurn.put("role", "system");
                     sysTurn.put("content", config.getSystemInstructions());
@@ -337,7 +414,6 @@ public class PuterChatManager {
                 @Override
                 public void onFailure(Call call, java.io.IOException e) {
                     if (call.isCanceled()) return;
-                    // Secondary fallback to V2 endpoint
                     executeV2Fallback(messages, modelId, config, authToken, isImageGen, listener);
                 }
 
@@ -435,7 +511,6 @@ public class PuterChatManager {
                 postError(listener, "Failed to parse image response: " + e.getMessage());
             }
         } else {
-            // Stream SSE chunks
             try {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(body.byteStream()));
                 String line;
@@ -472,7 +547,6 @@ public class PuterChatManager {
             builder.addHeader("Authorization", "Bearer " + authToken.trim());
         }
 
-        // Attach cookies alongside the bearer token so Puter's gateway validates sessions properly
         String cookies = CookieManager.getInstance().getCookie("https://puter.com");
         if (cookies != null && !cookies.isEmpty()) {
             builder.addHeader("Cookie", cookies);
@@ -484,7 +558,6 @@ public class PuterChatManager {
             return "gpt-4o-mini";
         }
         String model = rawModelId.trim();
-        // Standardize router prefixes: "openrouter:google/..." -> "openrouter/google/..."
         if (model.contains(":")) {
             model = model.replaceFirst(":", "/");
         }
