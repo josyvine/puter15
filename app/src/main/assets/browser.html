@@ -909,6 +909,18 @@
             const rawContent = event.content;
             if (!rawContent) return;
 
+            // --- ADDED: BRIDGE TO UNFREEZE CHAT BUBBLE ---
+            const isAuto = localStorage.getItem("operational_mode_auto") === "true";
+            if (isAuto && window.AndroidInterface) {
+                try {
+                    if (typeof window.AndroidInterface.onAutoModeDataReceived === 'function') {
+                        window.AndroidInterface.onAutoModeDataReceived(rawContent);
+                        addConsoleLog("Auto Mode Active: Payload forwarded to Chat Engine.", "system");
+                    }
+                } catch (ignored) {}
+            }
+            // ---------------------------------------------
+
             const itemsList = JSON.parse(rawContent);
             if (!Array.isArray(itemsList) || itemsList.length === 0) return;
 
