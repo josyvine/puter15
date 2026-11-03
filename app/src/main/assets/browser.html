@@ -338,8 +338,8 @@
       align-items: center;
       cursor: pointer;
       position: relative;
-      touch-action: pan-y;
       user-select: none;
+      will-change: transform, opacity;
       animation: slideIn 0.3s ease-out;
     }
 
@@ -595,11 +595,38 @@
         }
     }
 
+    // SUPPRESSION LIST: Permanently suppresses deleted Nostr events from ever re-appearing
+    function getDeletedNostrIds() {
+        try {
+            return new Set(JSON.parse(localStorage.getItem("deleted_nostr_ids") || "[]"));
+        } catch(e) {
+            return new Set();
+        }
+    }
+
+    function markNostrIdDeleted(eventId) {
+        if (!eventId) return;
+        try {
+            const set = getDeletedNostrIds();
+            set.add(eventId);
+            localStorage.setItem("deleted_nostr_ids", JSON.stringify(Array.from(set)));
+        } catch(e) {}
+    }
+
     function clearScraperInbox() {
         const listContainer = document.getElementById("inboxList");
         if (listContainer) {
+            const cards = listContainer.querySelectorAll('.tiny-box');
+            cards.forEach(c => {
+                const evtId = c.getAttribute('data-event-id');
+                if (evtId) markNostrIdDeleted(evtId);
+            });
             listContainer.innerHTML = '<div style="color: #999; text-align: center; font-size: 12px; margin-top: 20px;">No incoming data packets yet.</div>';
-            addConsoleLog("Scraper Inbox wiped clean.", "system");
+            
+            // Advance the since filter so the relay will never replay events prior to this moment
+            const nowSeconds = Math.floor(Date.now() / 1000);
+            localStorage.setItem("nostr_last_cleared", nowSeconds.toString());
+            addConsoleLog("Scraper Inbox wiped clean and events permanently blacklisted.", "system");
         }
     }
 
@@ -847,12 +874,21 @@
                 updateStatusUI("connected");
                 addConsoleLog("Nostr socket connected successfully.", "success");
 
+                // CRITICAL FIX: Only subscribe to fresh events created recently or since last clear!
+                // This permanently stops the relay from dumping days of old history on page load.
+                const lastCleared = parseInt(localStorage.getItem("nostr_last_cleared") || "0");
+                const currentSeconds = Math.floor(Date.now() / 1000);
+                const sessionStartThreshold = currentSeconds - 60; // Max 60 seconds of history
+                const effectiveSince = Math.max(lastCleared, sessionStartThreshold);
+
                 const reqFrame = ["REQ", "puter_inbox_sub", {
                     kinds: [1],
                     authors: [hexPubkey],
-                    "#t": ["puter_unofficial_scrap"]
+                    "#t": ["puter_unofficial_scrap"],
+                    since: effectiveSince
                 }];
-                addConsoleLog("Broadcasting NIP-01 subscription request: puter_inbox_sub", "info");
+
+                addConsoleLog(`Subscribed to live events since timestamp: ${effectiveSince}`, "info");
                 try {
                     nostrSocket.send(JSON.stringify(reqFrame));
                 } catch (sendErr) {
@@ -874,6 +910,19 @@
 
                     if (Array.isArray(message) && message[0] === "EVENT" && message[2]) {
                         const event = message[2];
+                        
+                        // Check if event was already deleted or blacklisted
+                        const deletedIds = getDeletedNostrIds();
+                        if (deletedIds.has(event.id)) {
+                            return; // Silently ignore deleted event
+                        }
+
+                        // Check if event is older than our last cleared timestamp
+                        const lastCleared = parseInt(localStorage.getItem("nostr_last_cleared") || "0");
+                        if (event.created_at && event.created_at < lastCleared) {
+                            return; // Silently ignore cleared event
+                        }
+
                         addConsoleLog("Incoming scraped event received. Event ID: " + event.id.substring(0, 10) + "...", "success");
                         processIncomingScrapedEvent(event);
                     }
@@ -930,12 +979,16 @@
             const rawContent = event.content;
             if (!rawContent) return;
 
+            // Only forward fresh events to the chat engine to prevent ghost replays
             const isAuto = localStorage.getItem("operational_mode_auto") === "true";
-            if (isAuto && window.AndroidInterface) {
+            const nowSeconds = Math.floor(Date.now() / 1000);
+            const isFreshEvent = !event.created_at || (nowSeconds - event.created_at < 120);
+
+            if (isAuto && isFreshEvent && window.AndroidInterface) {
                 try {
                     if (typeof window.AndroidInterface.onAutoModeDataReceived === 'function') {
                         window.AndroidInterface.onAutoModeDataReceived(rawContent);
-                        addConsoleLog("Auto Mode Active: Payload forwarded to Chat Engine.", "system");
+                        addConsoleLog("Auto Mode Active: Fresh payload forwarded to Chat Engine.", "system");
                     }
                 } catch (ignored) {}
             }
@@ -944,14 +997,17 @@
             if (!Array.isArray(itemsList) || itemsList.length === 0) return;
 
             const listContainer = document.getElementById("inboxList");
-            
-            // WIPE OLD NOSTR DATA: Clean out previous search cards when a new search batch arrives
-            listContainer.innerHTML = '';
+            if (listContainer.innerHTML.includes("No incoming data packets yet")) {
+                listContainer.innerHTML = '';
+            }
 
             itemsList.forEach((item, index) => {
                 const isUniversal = (item.hierarchy && item.hierarchy.main_category === "Universal Scrape");
                 const itemKey = isUniversal ? (item.specifications.title || "UNI_" + index) : (item.specifications.asin || "AMZN_" + index);
                 const cardId = `box_${event.id}_${itemKey}`;
+
+                const existingCard = document.getElementById(cardId);
+                if (existingCard) return;
 
                 let label = "";
                 let subLabel = "";
@@ -967,6 +1023,7 @@
                 const card = document.createElement("div");
                 card.className = "tiny-box";
                 card.id = cardId;
+                card.setAttribute('data-event-id', event.id);
 
                 card.innerHTML = `
                     <div class="tiny-box-content">
@@ -976,47 +1033,58 @@
                     <span class="material-symbols-outlined tiny-box-icon">archive</span>
                 `;
 
-                // --- REAL SWIPE-TO-DELETE GESTURE FOR NOSTR CARDS ---
+                // --- SMOOTH & RESPONSIVE SWIPE-TO-DELETE GESTURE ---
                 let touchStartX = 0;
                 let touchStartY = 0;
                 let isHorizontalSwipe = false;
+                let isDirectionDecided = false;
 
                 card.addEventListener('touchstart', (e) => {
                     touchStartX = e.touches[0].clientX;
                     touchStartY = e.touches[0].clientY;
                     isHorizontalSwipe = false;
+                    isDirectionDecided = false;
                     card.style.transition = 'none';
                 }, { passive: true });
 
                 card.addEventListener('touchmove', (e) => {
-                    const diffX = e.touches[0].clientX - touchStartX;
-                    const diffY = e.touches[0].clientY - touchStartY;
+                    const currentX = e.touches[0].clientX;
+                    const currentY = e.touches[0].clientY;
+                    const diffX = currentX - touchStartX;
+                    const diffY = currentY - touchStartY;
 
-                    // If moving horizontally more than vertically, treat as swipe
-                    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 10) {
-                        isHorizontalSwipe = true;
-                        if (diffX < 0) { // Only swipe left
-                            card.style.transform = `translateX(${diffX}px)`;
-                            card.style.opacity = `${1 - Math.abs(diffX) / 250}`;
+                    if (!isDirectionDecided) {
+                        if (Math.abs(diffX) > 8 || Math.abs(diffY) > 8) {
+                            isDirectionDecided = true;
+                            isHorizontalSwipe = Math.abs(diffX) > Math.abs(diffY);
                         }
                     }
-                }, { passive: true });
+
+                    if (isHorizontalSwipe) {
+                        if (e.cancelable) e.preventDefault(); // Stop vertical scroll from jamming horizontal swipe!
+                        if (diffX < 0) { // Only swipe left
+                            card.style.transform = `translateX(${diffX}px)`;
+                            card.style.opacity = `${Math.max(0.1, 1 - Math.abs(diffX) / 220)}`;
+                        }
+                    }
+                }, { passive: false });
 
                 card.addEventListener('touchend', (e) => {
-                    card.style.transition = 'transform 0.25s ease-out, opacity 0.25s ease-out';
                     const diffX = e.changedTouches[0].clientX - touchStartX;
+                    card.style.transition = 'transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.25s ease-out';
 
-                    // Swiped left by more than 75px: delete ONLY this specific Nostr card
-                    if (isHorizontalSwipe && diffX < -75) {
+                    // Effortless 60px swipe threshold
+                    if (isHorizontalSwipe && diffX < -60) {
                         card.style.transform = 'translateX(-120%)';
                         card.style.opacity = '0';
                         setTimeout(() => {
+                            markNostrIdDeleted(event.id);
                             card.remove();
-                            addConsoleLog("Swiped and wiped Nostr card: " + label, "info");
+                            addConsoleLog("Swiped and permanently deleted Nostr card: " + label, "info");
                             if (listContainer.children.length === 0) {
                                 listContainer.innerHTML = '<div style="color: #999; text-align: center; font-size: 12px; margin-top: 20px;">No incoming data packets yet.</div>';
                             }
-                        }, 250);
+                        }, 220);
                     } else {
                         // Snap back smoothly
                         card.style.transform = 'translateX(0)';
@@ -1026,7 +1094,7 @@
 
                 // Tap to Save Card Locally
                 card.onclick = (e) => {
-                    if (isHorizontalSwipe) return; // Ignore clicks if user was swiping
+                    if (isHorizontalSwipe) return;
 
                     const trackingId = isUniversal ? (item.specifications.title || "UNI_" + Date.now() + "_" + index) : (item.specifications.asin || "AMZN_" + Date.now() + "_" + index);
 
