@@ -52,7 +52,7 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.activity.result.ActivityResultLauncher;
+androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -203,6 +203,11 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
     // Auto Mode Memory Tracking
     private String pendingAutoModePrompt = null;
     private ChatMessage pendingAutoModeAssistantMsg = null;
+
+    // PERSISTENT MEMORY & CREDIT PROTECTION GUARDS
+    private String sessionScrapedWebContext = "";
+    private String lastProcessedPayloadHash = "";
+    private long lastProcessedPayloadTime = 0;
 
     private TextToSpeech textToSpeech;
     private SpeechRecognizer speechRecognizer;
@@ -1428,6 +1433,16 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         runOnUiThread(() -> {
             LiveLogManager.getInstance().ok("AUTO_MODE", "Payload Arrived in Native", "Size: " + (rawContent != null ? rawContent.length() : 0) + " chars");
 
+            // CREDIT DRAIN & GHOST TRIGGER PROTECTION
+            // If the exact same payload was already processed in the last 45 seconds, reject it!
+            if (rawContent != null && rawContent.equals(lastProcessedPayloadHash) 
+                    && (System.currentTimeMillis() - lastProcessedPayloadTime < 45000)) {
+                LiveLogManager.getInstance().warn("AUTO_MODE", "Duplicate Payload Dropped", "Ignored re-entrant payload to protect AI token credits.");
+                return;
+            }
+            lastProcessedPayloadHash = rawContent;
+            lastProcessedPayloadTime = System.currentTimeMillis();
+
             ChatMessage targetMsg = pendingAutoModeAssistantMsg;
             if (targetMsg == null) {
                 targetMsg = currentActiveAssistantMsg;
@@ -1474,6 +1489,12 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                 contextBlock = PuterChatManager.getActiveInstance().buildContextFromScrapedData(rawContent);
             } else {
                 contextBlock = "\n\n--- [LIVE WEB CONTEXT] ---\n" + rawContent + "\n--- [END CONTEXT] ---\n";
+            }
+
+            // PERSISTENT CONTEXT CAPTURE: Lock this context globally in the Activity for turn-2 follow-ups
+            this.sessionScrapedWebContext = contextBlock;
+            if (PuterChatManager.getActiveInstance() != null) {
+                PuterChatManager.getActiveInstance().setCurrentSessionWebContext(contextBlock);
             }
 
             String augmentedPrompt = baseQuery + "\n" + contextBlock +
@@ -1617,6 +1638,15 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
         String ratio = currentSession.getConfig().getAspectRatio();
         String sysInst = currentSession.getConfig().getSystemInstructions();
+        
+        // PERSISTENT MEMORY REINFORCEMENT FOR PUTER DRIVERS
+        if (sessionScrapedWebContext != null && !sessionScrapedWebContext.trim().isEmpty()) {
+            if (sysInst == null) sysInst = "";
+            if (!sysInst.contains("--- [LIVE WEB SCRAPED CONTEXT VIA AUTO-MODE] ---") && !sysInst.contains("LIVE WEB CONTEXT")) {
+                sysInst = (sysInst.isEmpty() ? "" : sysInst + "\n\n") + sessionScrapedWebContext;
+            }
+        }
+
         boolean isImageGen = modelCatalogManager.isImageGenerationModel(activeModelId);
 
         if (headlessAudioBridge != null) {
@@ -1742,6 +1772,16 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
                     currentSession.getConfig().getSystemInstructions() : null;
             if (sysInst == null || sysInst.trim().isEmpty()) {
                 sysInst = prefs.getString(AppConstants.KEY_CUSTOM_INSTRUCTION, "");
+            }
+
+            // GEMINI MEMORY AMNESIA FIX: INJECT PERSISTENT SCRAPED WEB CONTEXT AS GROUND TRUTH
+            if (sessionScrapedWebContext != null && !sessionScrapedWebContext.trim().isEmpty()) {
+                if (sysInst == null) sysInst = "";
+                if (!sysInst.contains("--- [LIVE WEB SCRAPED CONTEXT VIA AUTO-MODE] ---") && !sysInst.contains("LIVE WEB CONTEXT")) {
+                    sysInst = (sysInst.isEmpty() ? "" : sysInst + "\n\n") +
+                            "GROUND TRUTH LIVE WEB CONTEXT (Strict Directive: Maintain full memory of this verified real-time scraped report for all follow-up questions in this session. Never claim you lack real-time access when answered based on this report):\n" +
+                            sessionScrapedWebContext;
+                }
             }
 
             if (sysInst != null && !sysInst.trim().isEmpty()) {
@@ -1878,6 +1918,8 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
         if (currentSession == null) {
             currentSession = sessionManager.createNewSession(activeModelId);
         }
+        sessionScrapedWebContext = "";
+        lastProcessedPayloadHash = "";
         activeModelId = currentSession.getSelectedModelId();
         selectedModelText.setText(activeModelId);
         chatAdapter.setMessages(currentSession.getMessages());
@@ -1886,6 +1928,8 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
     private void createNewSession() {
         stopTts();
+        sessionScrapedWebContext = "";
+        lastProcessedPayloadHash = "";
         currentSession = sessionManager.createNewSession(activeModelId);
         activeModelId = currentSession.getSelectedModelId();
         selectedModelText.setText(activeModelId);
@@ -1896,6 +1940,8 @@ public class MainActivity extends AppCompatActivity implements LiveLogManager.Lo
 
     private void loadSessionIntoUI(ChatSession session) {
         stopTts();
+        sessionScrapedWebContext = "";
+        lastProcessedPayloadHash = "";
         sessionManager.setCurrentSessionId(session.getId());
         currentSession = session;
         activeModelId = session.getSelectedModelId();
