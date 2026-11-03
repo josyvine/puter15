@@ -148,6 +148,16 @@ public class WebAppInterface {
         }
     }
 
+    // --- ADDED: AUTO MODE DATA BRIDGE RECEIVER ---
+    @JavascriptInterface
+    public void onAutoModeDataReceived(String rawContent) {
+        logger.ok("AUTO_MODE_BRIDGE", "Scraped Content Received", "Payload size: " + (rawContent != null ? rawContent.length() : 0) + " bytes");
+        if (mainActivity != null && rawContent != null) {
+            mainActivity.runOnUiThread(() -> mainActivity.onAutoModeDataReceived(rawContent));
+        }
+    }
+    // ---------------------------------------------
+
     // --- DIAGNOSTICS & LOGGING BRIDGES ---
 
     @JavascriptInterface
