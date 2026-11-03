@@ -55,6 +55,9 @@ public class PuterChatManager {
     private Call activeCall;
     private AutoModeDataListener autoModeDataListener;
 
+    // PERSISTENT CONTEXT MEMORY: Retains scraped web context across follow-up queries in the session
+    private String currentSessionWebContext = "";
+
     public interface PuterChatListener {
         void onChunk(String chunkText);
         void onImageReceived(String imageUrlOrBase64);
@@ -101,6 +104,18 @@ public class PuterChatManager {
     // AUTO MODE CONTEXT BUILDER & INJECTION
     // ==========================================
 
+    public void clearScrapedContext() {
+        this.currentSessionWebContext = "";
+    }
+
+    public String getCurrentSessionWebContext() {
+        return this.currentSessionWebContext;
+    }
+
+    public void setCurrentSessionWebContext(String context) {
+        this.currentSessionWebContext = (context != null) ? context : "";
+    }
+
     /**
      * Parses raw scraped JSON from Nostr/Kiwi into an AI-ready context block.
      */
@@ -134,7 +149,10 @@ public class PuterChatManager {
             sb.append("Scraped Data Payload: ").append(rawScrapedJson).append("\n");
         }
         sb.append("--- [END OF WEB CONTEXT] ---\n");
-        return sb.toString();
+        
+        String result = sb.toString();
+        this.currentSessionWebContext = result; // Persist context in memory
+        return result;
     }
 
     /**
@@ -142,6 +160,7 @@ public class PuterChatManager {
      */
     public void dispatchAutoModeData(String rawContent) {
         String formatted = buildContextFromScrapedData(rawContent);
+        this.currentSessionWebContext = formatted; // Persist context in memory
         if (autoModeDataListener != null) {
             mainHandler.post(() -> autoModeDataListener.onAutoModeDataAvailable(rawContent, formatted));
         }
@@ -155,6 +174,7 @@ public class PuterChatManager {
                                                     String modelId, GenerationConfig config,
                                                     PuterChatListener listener) {
         String contextBlock = buildContextFromScrapedData(rawScrapedJson);
+        this.currentSessionWebContext = contextBlock; // Persist context in memory
         String augmentedPrompt = userPrompt + "\n" + contextBlock +
                 "\n\nInstruction: Use the live web context above to provide an accurate, up-to-date answer to the user query.";
 
@@ -281,6 +301,15 @@ public class PuterChatManager {
                 boolean isImageGen = isImageModel(modelId);
                 String normalizedModel = normalizeModelId(modelId);
 
+                // MEMORY REINFORCEMENT: If session context exists and prompt doesn't already have it, inject it
+                String effectivePrompt = userPrompt;
+                if (!isImageGen && currentSessionWebContext != null && !currentSessionWebContext.trim().isEmpty()) {
+                    if (!effectivePrompt.contains("--- [LIVE WEB SCRAPED CONTEXT VIA AUTO-MODE] ---")) {
+                        effectivePrompt = effectivePrompt + "\n\n" + currentSessionWebContext +
+                                "\n\nInstruction: Maintain context of the above scraped live data to answer this follow-up request thoroughly.";
+                    }
+                }
+
                 JSONArray messagesArray = new JSONArray();
 
                 // Add conversation history
@@ -301,7 +330,7 @@ public class PuterChatManager {
                     JSONArray contentBlocks = new JSONArray();
                     JSONObject textBlock = new JSONObject();
                     textBlock.put("type", "text");
-                    textBlock.put("text", userPrompt);
+                    textBlock.put("text", effectivePrompt);
                     contentBlocks.put(textBlock);
 
                     for (StagedFile file : attachments) {
@@ -314,7 +343,7 @@ public class PuterChatManager {
                     }
                     currentMsg.put("content", contentBlocks);
                 } else {
-                    currentMsg.put("content", userPrompt);
+                    currentMsg.put("content", effectivePrompt);
                 }
                 messagesArray.put(currentMsg);
 
@@ -330,10 +359,18 @@ public class PuterChatManager {
                 argsObj.put("model", normalizedModel);
                 argsObj.put("stream", !isImageGen);
 
-                if (config != null) {
-                    if (config.getSystemInstructions() != null && !config.getSystemInstructions().isEmpty()) {
-                        argsObj.put("system_message", config.getSystemInstructions());
+                String baseSysMessage = (config != null && config.getSystemInstructions() != null) ? config.getSystemInstructions() : "";
+                if (!isImageGen && currentSessionWebContext != null && !currentSessionWebContext.trim().isEmpty()) {
+                    if (!baseSysMessage.contains("--- [LIVE WEB SCRAPED CONTEXT VIA AUTO-MODE] ---")) {
+                        baseSysMessage = (baseSysMessage.isEmpty() ? "" : baseSysMessage + "\n\n") + currentSessionWebContext;
                     }
+                }
+
+                if (!baseSysMessage.isEmpty()) {
+                    argsObj.put("system_message", baseSysMessage);
+                }
+
+                if (config != null) {
                     if (config.getTemperature() > 0) {
                         argsObj.put("temperature", (double) config.getTemperature());
                     }
@@ -353,17 +390,18 @@ public class PuterChatManager {
                 Request request = reqBuilder.build();
                 activeCall = client.newCall(request);
 
+                final String finalSysMessage = baseSysMessage;
                 activeCall.enqueue(new Callback() {
                     @Override
                     public void onFailure(Call call, java.io.IOException e) {
                         if (call.isCanceled()) return;
-                        executeOpenAIFallback(messagesArray, normalizedModel, config, authToken, isImageGen, listener);
+                        executeOpenAIFallback(messagesArray, normalizedModel, config, authToken, isImageGen, finalSysMessage, listener);
                     }
 
                     @Override
                     public void onResponse(Call call, Response response) {
                         if (!response.isSuccessful()) {
-                            executeOpenAIFallback(messagesArray, normalizedModel, config, authToken, isImageGen, listener);
+                            executeOpenAIFallback(messagesArray, normalizedModel, config, authToken, isImageGen, finalSysMessage, listener);
                             return;
                         }
 
@@ -378,28 +416,28 @@ public class PuterChatManager {
     }
 
     private void executeOpenAIFallback(JSONArray messages, String modelId, GenerationConfig config,
-                                       String authToken, boolean isImageGen, PuterChatListener listener) {
+                                       String authToken, boolean isImageGen, String systemInstructions,
+                                       PuterChatListener listener) {
         try {
             JSONObject payload = new JSONObject();
             payload.put("messages", messages);
             payload.put("model", modelId);
             payload.put("stream", !isImageGen);
 
-            if (config != null) {
-                if (config.getSystemInstructions() != null && !config.getSystemInstructions().isEmpty()) {
-                    JSONObject sysTurn = new JSONObject();
-                    sysTurn.put("role", "system");
-                    sysTurn.put("content", config.getSystemInstructions());
-                    JSONArray newMessages = new JSONArray();
-                    newMessages.put(sysTurn);
-                    for (int i = 0; i < messages.length(); i++) {
-                        newMessages.put(messages.get(i));
-                    }
-                    payload.put("messages", newMessages);
+            if (systemInstructions != null && !systemInstructions.isEmpty()) {
+                JSONObject sysTurn = new JSONObject();
+                sysTurn.put("role", "system");
+                sysTurn.put("content", systemInstructions);
+                JSONArray newMessages = new JSONArray();
+                newMessages.put(sysTurn);
+                for (int i = 0; i < messages.length(); i++) {
+                    newMessages.put(messages.get(i));
                 }
-                if (config.getTemperature() > 0) {
-                    payload.put("temperature", (double) config.getTemperature());
-                }
+                payload.put("messages", newMessages);
+            }
+
+            if (config != null && config.getTemperature() > 0) {
+                payload.put("temperature", (double) config.getTemperature());
             }
 
             Request.Builder b = new Request.Builder()
@@ -414,32 +452,33 @@ public class PuterChatManager {
                 @Override
                 public void onFailure(Call call, java.io.IOException e) {
                     if (call.isCanceled()) return;
-                    executeV2Fallback(messages, modelId, config, authToken, isImageGen, listener);
+                    executeV2Fallback(messages, modelId, config, authToken, isImageGen, systemInstructions, listener);
                 }
 
                 @Override
                 public void onResponse(Call call, Response response) {
                     if (!response.isSuccessful()) {
-                        executeV2Fallback(messages, modelId, config, authToken, isImageGen, listener);
+                        executeV2Fallback(messages, modelId, config, authToken, isImageGen, systemInstructions, listener);
                         return;
                     }
                     handleStreamOrJsonResponse(call, response, isImageGen, listener);
                 }
             });
         } catch (Exception ex) {
-            executeV2Fallback(messages, modelId, config, authToken, isImageGen, listener);
+            executeV2Fallback(messages, modelId, config, authToken, isImageGen, systemInstructions, listener);
         }
     }
 
     private void executeV2Fallback(JSONArray messages, String modelId, GenerationConfig config,
-                                   String authToken, boolean isImageGen, PuterChatListener listener) {
+                                   String authToken, boolean isImageGen, String systemInstructions,
+                                   PuterChatListener listener) {
         try {
             JSONObject payload = new JSONObject();
             payload.put("messages", messages);
             payload.put("model", modelId);
             payload.put("stream", !isImageGen);
-            if (config != null && config.getSystemInstructions() != null) {
-                payload.put("system_message", config.getSystemInstructions());
+            if (systemInstructions != null && !systemInstructions.isEmpty()) {
+                payload.put("system_message", systemInstructions);
             }
 
             Request.Builder b = new Request.Builder()
