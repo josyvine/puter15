@@ -394,11 +394,25 @@ public class GeminiService {
                 root.remove("urlContext");
             }
 
-            // Clean empty systemInstruction if present
+            // Clean and validate systemInstruction parts
             if (root.has("systemInstruction")) {
                 JSONObject sysObj = root.optJSONObject("systemInstruction");
                 if (sysObj == null || !sysObj.has("parts") || sysObj.getJSONArray("parts").length() == 0) {
                     root.remove("systemInstruction");
+                } else {
+                    JSONArray parts = sysObj.getJSONArray("parts");
+                    JSONArray validSysParts = new JSONArray();
+                    for (int sp = 0; sp < parts.length(); sp++) {
+                        JSONObject p = parts.optJSONObject(sp);
+                        if (p != null && p.has("text") && !p.getString("text").trim().isEmpty()) {
+                            validSysParts.put(p);
+                        }
+                    }
+                    if (validSysParts.length() > 0) {
+                        sysObj.put("parts", validSysParts);
+                    } else {
+                        root.remove("systemInstruction");
+                    }
                 }
             }
 
@@ -470,9 +484,12 @@ public class GeminiService {
                 }
             }
 
-            // If prompt is already pre-compiled by MainActivity or official tool is active, pass cleanly
-            if (hasOfficialUrlContextTool || rawPayloadJson.contains("=== REPOSITORY & URL CONTEXT COMPILATION")) {
-                LiveLogManager.getInstance().ok("URL_CONTEXT", "Schema Validated", "Multi-turn payload validated.");
+            // LIVE WEB CONTEXT BYPASS: If prompt/system contains persistent scraped context, pass cleanly
+            if (hasOfficialUrlContextTool || 
+                rawPayloadJson.contains("=== REPOSITORY & URL CONTEXT COMPILATION") ||
+                rawPayloadJson.contains("LIVE WEB CONTEXT") ||
+                rawPayloadJson.contains("LIVE WEB SCRAPED CONTEXT")) {
+                LiveLogManager.getInstance().ok("URL_CONTEXT", "Schema Validated", "Live web context multi-turn payload validated.");
                 return root.toString();
             }
 
